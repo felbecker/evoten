@@ -48,7 +48,7 @@ class TreeHandler():
         return self.get_values(self.branch_lengths, layer)
 
 
-    """ Retrieves a vector with the number of child nodes for each node in the given layer.
+    r""" Retrieves a vector with the number of child nodes for each node in the given layer.
         Example:
         For the tree
            ROOT

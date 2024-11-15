@@ -1,4 +1,13 @@
 from tensortree.tree import Tree
+import tensortree.util
+import os
+
+# load a computational backend
+DEFAULT_BACKEND = "tensorflow"
+backend_name = os.environ.get("tensortree_backend", DEFAULT_BACKEND)
+util._validate_backend(backend_name)
+if backend_name == "tensorflow":
+    import tensortree.backend_tf as backend
 
 
 """
