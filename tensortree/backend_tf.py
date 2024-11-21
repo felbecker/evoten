@@ -1,11 +1,22 @@
 import tensorflow as tf
+import numpy as np
 from Bio.Phylo import BaseTree
+from functools import partial
 
 
+
+""" Optional decorator for top-level functions
+"""
+decorator = tf.function
+
+
+""" Utility class that stores tensor results and concatenates them.
+    Required interface: __init__(size, dtype), cache.write(index, tensor), cache.concat()
+"""
+Cache = tf.TensorArray
 
 
 """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 expected mutation per site.
-    Note: The exchangeability matrix is symmetric, but uses an overparameterized d x d kernel for speed of computation.
 Args:
     exchangeabilities: Symmetric, positive-semidefinite exchangeability matrices with zero diagonal. Shape: (k, d, d) 
     equilibrium_kernel: A vector of relative frequencies. Shape: (k, d) 
@@ -47,6 +58,9 @@ def make_branch_lengths(kernel):
 
 
 """Constructs a stack of symmetric, positive-semidefinite matrices with zero diagonal from a parameter kernel.
+    Note: Uses an overparameterized d x d kernel for speed of computation.
+Args:
+    kernel: Tensor of shape (k, d, d).
 """
 def make_symmetric_pos_semidefinite(kernel):
     R = 0.5 * (kernel + tf.transpose(kernel, [0,2,1])) #make symmetric
@@ -63,13 +77,16 @@ def make_equilibrium(kernel):
 """
 Computes the probabilities after traversing a branch when starting with distributions X.
 Args:
-    X: tensor of shape (n, k, d)
+    X: tensor with logits of shape (n, L, k, d)
     branch_probabilities: tensor of shape (n, k, d, d)
 Returns:
-    shape (n, k, d)
+    logits of shape (n, L, k, d)
 """
 def traverse_branch(X, branch_probabilities):
-    return tf.einsum("nkd,nkdz -> nkz", X, branch_probabilities)
+    X = probs_from_logits(X)
+    X = tf.einsum("nLkd,nkdz -> nLkz", X, branch_probabilities)
+    X = logits_from_probs(X)
+    return X
 
 
 r"""
@@ -88,4 +105,36 @@ Returns:
     tensor of shape (batch_size, num_parents, num_models, d) representing the aggregated probabilities of the parent nodes.
 """
 def aggregate_children_log_probs(X, parent_map):
-    return tf.math.segment_sum(X, parent_map)
+    ids = tf.repeat(tf.range(tf.shape(parent_map)[0]), parent_map)
+    return tf.math.segment_sum(X, ids)
+
+"""
+Computes log likelihoods given root logits and equilibrium distributions.
+Args:
+    root_logits: Logits at the root node of shape (k, models, d)
+    equilibrium_logits: Equilibrium distribution logits of shape (models, d)
+Returns:
+    Log-likelihoods of shape (k, models)
+"""
+def loglik_from_root_logits(root_logits, equilibrium_logits):
+    return tf.math.reduce_logsumexp(root_logits + equilibrium_logits, axis=-1)
+
+
+""" Computes element-wise logarithm with output_i=log_zero_val where x_i=0.
+"""
+def logits_from_probs(probs, log_zero_val=-1e3):
+    epsilon = tf.constant(np.finfo(np.float32).tiny, dtype=probs.dtype)
+    logits = tf.math.log(tf.maximum(probs, epsilon))
+    zero_mask = tf.cast(tf.equal(probs, 0), dtype=logits.dtype)
+    logits = (1-zero_mask) * logits + zero_mask * log_zero_val
+    return logits
+
+
+""" Computes element-wise exp
+"""
+def probs_from_logits(logits):
+    return tf.math.exp(logits)
+
+
+def reorder(tensor, permutation, axis=0):
+    return tf.gather(tensor, permutation, axis=axis)
