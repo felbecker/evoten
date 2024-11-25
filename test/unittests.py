@@ -105,6 +105,7 @@ class TestTree(unittest.TestCase):
         np.testing.assert_equal(t4.get_branch_lengths_by_depth(1)[:,0], np.array([0.1, 0.2, 0.4, 0.1]))
 
 
+
 class TestBackendTF(unittest.TestCase):
 
     def test_branch_lengths(self):
@@ -112,6 +113,7 @@ class TestBackendTF(unittest.TestCase):
         kernel = np.array([[-3., -1., 0.], [1., 2., 3.]])
         branch_lengths = make_branch_lengths(kernel)
         self.assertTrue(np.all(branch_lengths > 0.))
+
 
     def test_rate_matrix(self):
         from tensortree.backend_tf import make_rate_matrix
@@ -122,6 +124,7 @@ class TestBackendTF(unittest.TestCase):
         #since the matrix is normalized, all mue should yield the same result
         ref = np.array([[[-1., .5, .5], [.5, -1, .5], [.5, .5, -1]]]*3)
         np.testing.assert_allclose(rate_matrix, ref)
+
 
     def test_transition_probs(self):
         from tensortree.backend_tf import make_rate_matrix
@@ -139,13 +142,30 @@ class TestBackendTF(unittest.TestCase):
         np.testing.assert_almost_equal(number_of_expected_mutations, 1.) 
 
 
+
 class TestModel(unittest.TestCase):
+    
+    # computes the correct likelihood of a star-shaped tree when
+    # a Jukes-Cantor model with mue=4/3 is used and
+    # character z is at the root
+    def get_ref_star(self, z, obs_at_leaves, t = [0.1, 0.2, 0.4, 0.1]):
+        mue=4./3
+        p = []
+        for i,x in enumerate(obs_at_leaves):
+            if x == z:
+                p.append(1./4 + 3./4 * np.exp(-mue*t[i]))
+            else:
+                p.append(1./4 - 1./4 * np.exp(-mue*t[i]))
+        return np.prod(p)
 
-    def test_anc_probs(self):
-        import tensorflow as tf
 
+    def get_star_inputs_refs(self):
         t = TreeHandler.read("test/data/star.tree")
-        leaves = np.array([[0], [1], [2], [3]])
+        # leaves will have shape (num_leaves, L, models, d)
+        leaves = np.array([[0,2,3], [1,1,0], [2,1,0], [3,1,2]])
+        #compute reference values
+        refs = np.array([[self.get_ref_star(i, leaves[:,j]) for i in range(4)] for j in range(3)])
+        # one-hot encode the leaves
         leaves = np.eye(4)[leaves]
         leaves = leaves[:,:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
@@ -153,22 +173,97 @@ class TestModel(unittest.TestCase):
                                  [1./3, -1, 1./3, 1./3], 
                                  [1./3, 1./3, -1, 1./3], 
                                  [1./3, 1./3, 1./3, -1]]])
+        return leaves, leaf_names, t, rate_matrix, refs
+
+
+    def test_anc_probs_star(self):
+        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
+
+        # test if the ancestral probabilities are computed correctly
         X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, 
                                                     leaves_are_probabilities=True,
                                                     return_probabilities=True)
+        np.testing.assert_almost_equal(X[0,:,0], refs)
 
-        def p(z, mue=4./3):
-            t = np.array([0.1, 0.2, 0.4, 0.1])
-            p = 1./4 - 1./4 * (np.exp(-mue*t))
-            p[z] = 1./4 + 3./4 * np.exp(-mue*t[z])
-            return np.prod(p)
 
-        ref = np.array([p(i) for i in range(4)])
-        np.testing.assert_almost_equal(X[0,0,0], ref)
-
+    def test_likelihood_star(self):
+        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
         L = model.loglik(leaves, leaf_names, t, rate_matrix, 
                         equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]),
                         leaves_are_probabilities=True)
-        np.testing.assert_almost_equal(L, np.log(np.sum(ref)/4))
+        self.assertEqual(L.shape, (3,1))
+        np.testing.assert_almost_equal(L[:,0], np.log(np.sum(refs, -1)/4))
 
+
+    def test_anc_probs_star_unordered_leaves(self):
+        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
+        permuation = [2,1,0,3]
+        leaves = leaves[permuation]
+        leaf_names = [leaf_names[i] for i in permuation]
+        X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, 
+                                                    leaves_are_probabilities=True,
+                                                    return_probabilities=True)
+        np.testing.assert_almost_equal(X[0,:,0], refs)
     
+
+    # computes the correct likelihood of simple3.tree when 
+    # a Jukes-Cantor model with mue=4/3 is used 
+    #           K
+    #        /    \
+    #       I      J
+    #      / \    / \
+    #     G   C  D   H
+    #    / \        / \
+    #    A B       E  F
+    def get_ref_simple3(self, obs_at_leaves):
+        # A B C D E F given
+        mue=4./3
+
+        G = [self.get_ref_star(i, obs_at_leaves[:2], [0.1, 0.2]) for i in range(4)]
+        H = [self.get_ref_star(i, obs_at_leaves[-2:], [0.6, 0.7]) for i in range(4)]
+        
+        def get_transitions(t):
+            Pii = np.eye(4) * (1./4 + 3./4 * np.exp(-mue*t))
+            Pij = (1-np.eye(4)) * (1./4 - 1./4 * np.exp(-mue*t))
+            return Pii + Pij
+        
+        I1 = np.dot(get_transitions(0.3), G) #need matrix transpose if not symmetric
+        I2 = np.array([self.get_ref_star(i, obs_at_leaves[2:3], [0.4]) for i in range(4)])
+        I = I1 * I2
+        print("I1", I1)
+        print("I2", I2)
+        J = np.dot(get_transitions(0.8), H)
+        J *= np.array([self.get_ref_star(i, obs_at_leaves[3:4], [0.9]) for i in range(4)])
+
+        K = np.dot(get_transitions(0.5), I)
+        K *= np.dot(get_transitions(1.), J)
+
+        return I
+    
+
+    def get_simple3_inputs_refs(self):
+        t = TreeHandler.read("test/data/simple3.tree")
+        # leaves will have shape (num_leaves, L, models, d)
+        leaves = np.array([[0,1,3,3,1], [1,1,0,2,2], [2,1,0,3,0], 
+                           [3,1,2,2,3], [0,1,2,3,0], [0,1,1,2,0]])
+        #compute reference values
+        refs = np.array([self.get_ref_simple3(leaves[:,j]) for j in range(5)])
+        # one-hot encode the leaves
+        leaves = np.eye(4)[leaves]
+        leaves = leaves[:,:,np.newaxis]
+        leaf_names = ['A', 'B', 'C', 'D', 'E', 'F']
+        rate_matrix = np.array([[[-1., 1./3, 1./3, 1./3], 
+                                 [1./3, -1, 1./3, 1./3], 
+                                 [1./3, 1./3, -1, 1./3], 
+                                 [1./3, 1./3, 1./3, -1]]])
+        return leaves, leaf_names, t, rate_matrix, refs
+
+
+    def test_anc_probs_simple3(self):
+        leaves, leaf_names, t, rate_matrix, refs = self.get_simple3_inputs_refs()
+        # test if the ancestral probabilities are computed correctly
+        X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, 
+                                                    leaves_are_probabilities=True,
+                                                    return_probabilities=True)
+        self.assertEqual(X.shape, (5,5,1,4))  
+        np.testing.assert_almost_equal(X[2,:,0], refs)

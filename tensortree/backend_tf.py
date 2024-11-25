@@ -138,3 +138,7 @@ def probs_from_logits(logits):
 
 def reorder(tensor, permutation, axis=0):
     return tf.gather(tensor, permutation, axis=axis)
+
+
+def concat(tensors, axis=0):
+    return tf.concat(tensors, axis=axis)
