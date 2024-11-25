@@ -10,10 +10,10 @@ from functools import partial
 decorator = tf.function
 
 
-""" Utility class that stores tensor results and concatenates them.
-    Required interface: __init__(size, dtype), cache.write(index, tensor), cache.concat()
-"""
-Cache = tf.TensorArray
+"""Initializes the ancestral logits tensor with zeros."""
+def get_ancestral_logits_init_tensor(leaves, num_ancestral):
+    _, L, models, d = tf.unstack(tf.shape(leaves), 4)
+    return tf.zeros((num_ancestral, L, models, d), dtype=leaves.dtype)
 
 
 """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 expected mutation per site.
@@ -90,31 +90,24 @@ def traverse_branch(X, branch_probabilities):
 
 
 r"""
-Aggregates the log-probabilities of child nodes.
+Aggregates the partial log-likelihoods of child nodes.
 Args:
-    X: tensor of shape (n, k, d)
-    parent_map: A list-like object of shape (batch_size, num_parents) that contains the number of children for each parent node.
-                The computation will rely on the correct order of the children according to parent_map.
-                Example:
-                parent_map = [[2,1,3]]
-                Stands for this topology and assumes that the children are ordered D E F G H I:
-                A   B   C
-                |\  |  /|\
-                D E F G H I
+    X: tensor of shape (n, L, k, d)
+    parent_map: A list-like object of shape (n) that contains the index of parent nodes.
+    num_ancestral: Total number of ancestral nodes.
 Returns:
-    tensor of shape (batch_size, num_parents, num_models, d) representing the aggregated probabilities of the parent nodes.
+    tensor of shape (num_ancestral, L, k, d).
 """
-def aggregate_children_log_probs(X, parent_map):
-    ids = tf.repeat(tf.range(tf.shape(parent_map)[0]), parent_map)
-    return tf.math.segment_sum(X, ids)
+def aggregate_children_log_probs(X, parent_map, num_ancestral):
+    return tf.math.unsorted_segment_sum(X, parent_map, num_ancestral)
 
 """
 Computes log likelihoods given root logits and equilibrium distributions.
 Args:
-    root_logits: Logits at the root node of shape (k, models, d)
-    equilibrium_logits: Equilibrium distribution logits of shape (models, d)
+    root_logits: Logits at the root node of shape (L, k, d)
+    equilibrium_logits: Equilibrium distribution logits of shape (k, d)
 Returns:
-    Log-likelihoods of shape (k, models)
+    Log-likelihoods of shape (L, k)
 """
 def loglik_from_root_logits(root_logits, equilibrium_logits):
     return tf.math.reduce_logsumexp(root_logits + equilibrium_logits, axis=-1)

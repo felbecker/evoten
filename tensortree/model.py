@@ -6,9 +6,9 @@ backend = util.load_backend()
 
 
 """
-Computes the ancestral logits at all internal (ancestral) nodes in the tree 
+Computes the partial log-likelihoods at all internal (ancestral) nodes in the tree 
 given logits at the leaves and a tree topology.
-Supports multiple models (parameter sets that share the same tree topology).
+Supports multiple models.
 Uses a vectorized implementation of Felsenstein's pruning algorithm
 that treats models, sequence positions and all nodes within a tree layer in parallel.
 Args:
@@ -32,47 +32,29 @@ def compute_ancestral_probabilities(leaves, leaf_names,
     if leaves_are_probabilities:
         leaves = backend.logits_from_probs(leaves)
 
-    if not return_only_root:
-        anc_probs = backend.Cache(size = tree_handler.depth, dtype=leaves.dtype, infer_shape=False)
+    num_anc = tree_handler.num_nodes - tree_handler.num_leaves
+    anc_logliks = backend.get_ancestral_logits_init_tensor(leaves, num_anc)
 
-    # initialize 
-    leaves = tree_handler.reorder(leaves, leaf_names)
-    proc_leaves = tree_handler.layer_sizes[tree_handler.depth]
-    X = leaves[:proc_leaves]
+    # reorder the leaves to match the tree handlers internal order
+    X = tree_handler.reorder(leaves, leaf_names)
     
-    for depth in range(tree_handler.depth, 0, -1):
+    for height in range(tree_handler.height):
         
-        # traverse all edges {u, parent(u)} for all u of same depth
-        B = tree_handler.get_branch_lengths_by_depth(depth)
+        # traverse all edges {u, parent(u)} for all u of same height in parallel
+        B = tree_handler.get_branch_lengths_by_height(height)
         P = backend.make_transition_probs(rate_matrix, B)
         T = backend.traverse_branch(X, P)
 
-        if depth == 2:
-            print(P[2])
-            print(backend.probs_from_logits(T[2]))
-
-        num_leaves_above = tree_handler.layer_leaves[depth-1]
-
         # aggregate over child nodes
-        child_counts = tree_handler.get_child_counts_by_depth(depth-1)[num_leaves_above:]
-        X_anc = backend.aggregate_children_log_probs(T, child_counts)
-        if depth > 1:
-            if num_leaves_above > 0:
-                X_leaves = leaves[proc_leaves:proc_leaves+num_leaves_above]
-                proc_leaves += num_leaves_above
-                X = backend.concat([X_leaves, X_anc])
-            else:
-                X = X_anc
+        parent_indices = tree_handler.get_parent_indices_by_height(height)
+        anc_logliks += backend.aggregate_children_log_probs(T, parent_indices-tree_handler.num_leaves, num_anc)
 
-        if not return_only_root:
-            anc_probs = anc_probs.write(tree_handler.depth - depth, X_anc)
+        X = tree_handler.get_values_by_height(anc_logliks, height+1, leaves_included=False)
 
     if return_only_root:
-        logits = X_anc[-1]
-    else:
-        logits = anc_probs.concat()
+        anc_logliks = anc_logliks[-1]
 
-    return backend.probs_from_logits(logits) if return_probabilities else logits
+    return backend.probs_from_logits(anc_logliks) if return_probabilities else anc_logliks
 
 
 """

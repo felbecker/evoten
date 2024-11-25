@@ -9,82 +9,89 @@ from tensortree import model
 class TestTree(unittest.TestCase):
 
     def test_indices(self):
-        # tensortree sorts nodes descending by depth and
-        # leaf-first among nodes with the same depth
+        # tensortree sorts nodes by height and left to right within a layer
         ind = TreeHandler.read("test/data/simple.tree").get_indices(['A', 'B', 'C', 'D'])
-        self.assertEqual(set((ind[0], ind[1])), set((2,3)))
-        self.assertEqual(set((ind[2], ind[3])), set((0,1)))
+        np.testing.assert_equal(ind, np.array([0,1,2,3]))
         ind2 = TreeHandler.read("test/data/simple2.tree").get_indices(['A', 'B', 'C', 'D', 'E'])
-        self.assertEqual(set((ind2[0], ind2[1])), set((4,5)))
-        self.assertEqual(ind2[2], 2)
-        self.assertEqual(set((ind2[3], ind2[4])), set((0,1)))
+        np.testing.assert_equal(ind2, np.array([0,1,2,3,4]))
         ind3 = TreeHandler.read("test/data/simple3.tree").get_indices(['A', 'B', 'C', 'D', 'E', 'F'])
-        self.assertEqual(set((ind3[0], ind3[1])), set((0,1)))
-        self.assertEqual(ind3[2], 4)
-        self.assertEqual(ind3[3], 5)
-        self.assertEqual(set((ind3[4], ind3[5])), set((2,3)))
+        np.testing.assert_equal(ind3, np.array([0,1,2,3,4,5]))
         ind4 = TreeHandler.read("test/data/star.tree").get_indices(['A', 'B', 'C', 'D'])
-        self.assertEqual(set(ind4), 
-                         set(range(4)))
+        np.testing.assert_equal(ind4, np.array([0,1,2,3]))
 
     def test_layer_sizes(self):
-        layer_sizes1 = TreeHandler.read("test/data/simple.tree").layer_sizes
-        layer_sizes2 = TreeHandler.read("test/data/simple2.tree").layer_sizes
-        layer_sizes3 = TreeHandler.read("test/data/simple3.tree").layer_sizes
-        layer_sizes4 = TreeHandler.read("test/data/star.tree").layer_sizes
-        np.testing.assert_equal(layer_sizes1, np.array([1, 3, 2]))
-        np.testing.assert_equal(layer_sizes2, np.array([1, 3, 2, 2]))
-        np.testing.assert_equal(layer_sizes3, np.array([1, 2, 4, 4]))
-        np.testing.assert_equal(layer_sizes4, np.array([1, 4]))
 
-    def test_layer_leaves(self):
-        layer_leaves1 = TreeHandler.read("test/data/simple.tree").layer_leaves
-        layer_leaves2 = TreeHandler.read("test/data/simple2.tree").layer_leaves
-        layer_leaves3 = TreeHandler.read("test/data/simple3.tree").layer_leaves
-        layer_leaves4 = TreeHandler.read("test/data/star.tree").layer_leaves
-        np.testing.assert_equal(layer_leaves1, np.array([0, 2, 2]))
-        np.testing.assert_equal(layer_leaves2, np.array([0, 2, 1, 2]))
-        np.testing.assert_equal(layer_leaves3, np.array([0, 0, 2, 4]))
-        np.testing.assert_equal(layer_leaves4, np.array([0, 4]))
-
-    def test_child_counts(self):
         t1 = TreeHandler.read("test/data/simple.tree")
         t2 = TreeHandler.read("test/data/simple2.tree")
         t3 = TreeHandler.read("test/data/simple3.tree")
         t4 = TreeHandler.read("test/data/star.tree")
-        np.testing.assert_equal(t1.child_counts, np.array([0,0,0,0,2,3]))
-        np.testing.assert_equal(t2.child_counts, np.array([0,0,0,2,0,0,2,3]))
-        np.testing.assert_equal(t3.child_counts, np.array([0,0,0,0,0,0,2,2,2,2,2]))
-        np.testing.assert_equal(t4.child_counts, np.array([0,0,0,0,4]))
-        np.testing.assert_equal(t1.get_child_counts_by_depth(0), np.array([3]))
-        np.testing.assert_equal(t1.get_child_counts_by_depth(1), np.array([0,0,2]))
-        np.testing.assert_equal(t1.get_child_counts_by_depth(2), np.array([0,0]))
-        np.testing.assert_equal(t2.get_child_counts_by_depth(0), np.array([3]))
-        np.testing.assert_equal(t2.get_child_counts_by_depth(1), np.array([0,0,2]))
-        np.testing.assert_equal(t2.get_child_counts_by_depth(2), np.array([0,2]))
-        np.testing.assert_equal(t2.get_child_counts_by_depth(3), np.array([0,0]))
-        np.testing.assert_equal(t3.get_child_counts_by_depth(0), np.array([2]))
-        np.testing.assert_equal(t3.get_child_counts_by_depth(1), np.array([2,2]))
-        np.testing.assert_equal(t3.get_child_counts_by_depth(2), np.array([0,0,2,2]))
-        np.testing.assert_equal(t3.get_child_counts_by_depth(3), np.array([0,0,0,0]))
-        np.testing.assert_equal(t4.get_child_counts_by_depth(0), np.array([4]))
-        np.testing.assert_equal(t4.get_child_counts_by_depth(1), np.array([0,0,0,0]))
+
+        np.testing.assert_equal(t1.layer_sizes, np.array([4,1,1]))
+        np.testing.assert_equal(t2.layer_sizes, np.array([5,1,1,1]))
+        np.testing.assert_equal(t3.layer_sizes, np.array([6,2,2,1]))
+        np.testing.assert_equal(t4.layer_sizes, np.array([4,1]))
+
+    def test_child_counts(self):
+
+        t1 = TreeHandler.read("test/data/simple.tree")
+        t2 = TreeHandler.read("test/data/simple2.tree")
+        t3 = TreeHandler.read("test/data/simple3.tree")
+        t4 = TreeHandler.read("test/data/star.tree")
+
+        np.testing.assert_equal(t1.leaf_counts, np.array([0,0,0,0,2,2]))
+        np.testing.assert_equal(t1.internal_counts, np.array([0,0,0,0,0,1]))
+        np.testing.assert_equal(t2.leaf_counts, np.array([0,0,0,0,0,2,1,2]))
+        np.testing.assert_equal(t2.internal_counts, np.array([0,0,0,0,0,0,1,1]))
+        np.testing.assert_equal(t3.leaf_counts, np.array([0,0,0,0,0,0,2,2,1,1,0]))
+        np.testing.assert_equal(t3.internal_counts, np.array([0,0,0,0,0,0,0,0,1,1,2]))
+        np.testing.assert_equal(t4.leaf_counts, np.array([0,0,0,0,4]))
+        np.testing.assert_equal(t4.internal_counts, np.array([0,0,0,0,0]))
+
+        np.testing.assert_equal(t1.get_leaf_counts_by_height(0), np.array([0,0,0,0]))
+        np.testing.assert_equal(t1.get_internal_counts_by_height(0), np.array([0,0,0,0]))
+        np.testing.assert_equal(t1.get_leaf_counts_by_height(1), np.array([2]))
+        np.testing.assert_equal(t1.get_internal_counts_by_height(1), np.array([0]))
+        np.testing.assert_equal(t1.get_leaf_counts_by_height(2), np.array([2]))
+        np.testing.assert_equal(t1.get_internal_counts_by_height(2), np.array([1]))
+
+        np.testing.assert_equal(t2.get_leaf_counts_by_height(0), np.array([0,0,0,0,0]))
+        np.testing.assert_equal(t2.get_internal_counts_by_height(0), np.array([0,0,0,0,0]))
+        np.testing.assert_equal(t2.get_leaf_counts_by_height(1), np.array([2]))
+        np.testing.assert_equal(t2.get_internal_counts_by_height(1), np.array([0]))
+        np.testing.assert_equal(t2.get_leaf_counts_by_height(2), np.array([1]))
+        np.testing.assert_equal(t2.get_internal_counts_by_height(2), np.array([1]))
+        np.testing.assert_equal(t2.get_leaf_counts_by_height(3), np.array([2]))
+        np.testing.assert_equal(t2.get_internal_counts_by_height(3), np.array([1]))
+
+        np.testing.assert_equal(t3.get_leaf_counts_by_height(0), np.array([0,0,0,0,0,0]))
+        np.testing.assert_equal(t3.get_internal_counts_by_height(0), np.array([0,0,0,0,0,0]))
+        np.testing.assert_equal(t3.get_leaf_counts_by_height(1), np.array([2,2]))
+        np.testing.assert_equal(t3.get_internal_counts_by_height(1), np.array([0,0]))
+        np.testing.assert_equal(t3.get_leaf_counts_by_height(2), np.array([1,1]))
+        np.testing.assert_equal(t3.get_internal_counts_by_height(2), np.array([1,1]))
+        np.testing.assert_equal(t3.get_leaf_counts_by_height(3), np.array([0]))
+        np.testing.assert_equal(t3.get_internal_counts_by_height(3), np.array([2]))
+
+        np.testing.assert_equal(t4.get_leaf_counts_by_height(0), np.array([0,0,0,0]))
+        np.testing.assert_equal(t4.get_internal_counts_by_height(0), np.array([0,0,0,0]))
+        np.testing.assert_equal(t4.get_leaf_counts_by_height(1), np.array([4]))
+        np.testing.assert_equal(t4.get_internal_counts_by_height(1), np.array([0]))
 
     # tests if values from external tensors are correctly reads
-    def test_get_values_by_depth(self):
+    def test_get_values_by_height(self): 
         # nodes are sorted by depth 
         t = TreeHandler.read("test/data/simple.tree")
         branch_lens = np.array([0.1, 0.5, 0.3, 0.7, 0.2])
-        np.testing.assert_equal(t.get_values_by_depth(branch_lens, 1, no_root=True), np.array([0.3, 0.7, 0.2]))
-        np.testing.assert_equal(t.get_values_by_depth(branch_lens, 2, no_root=True), np.array([0.1, 0.5]))
+        np.testing.assert_equal(t.get_values_by_height(branch_lens, 0), np.array([0.1, 0.5, 0.3, 0.7]))
+        np.testing.assert_equal(t.get_values_by_height(branch_lens, 1), np.array([0.2]))
         t2 = TreeHandler.read("test/data/simple2.tree")
         branch_lens2 = np.array([0.4, 0.6, 0.1, 0.5, 0.3, 0.7, 0.2])
-        np.testing.assert_equal(t2.get_values_by_depth(branch_lens2, 1, no_root=True), np.array([0.3, 0.7, 0.2]))
-        np.testing.assert_equal(t2.get_values_by_depth(branch_lens2, 2, no_root=True), np.array([0.1, 0.5]))
-        np.testing.assert_equal(t2.get_values_by_depth(branch_lens2, 3, no_root=True), np.array([0.4, 0.6]))
+        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 0), np.array([0.4, 0.6, 0.1, 0.5, 0.3]))
+        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 1), np.array([0.7]))
+        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 2), np.array([0.2]))
         t3 = TreeHandler.read("test/data/star.tree")
         branch_lens3 = np.array([0.4, 0.6, 0.1, 0.5])
-        np.testing.assert_equal(t3.get_values_by_depth(branch_lens3, 1, no_root=True), branch_lens3)
+        np.testing.assert_equal(t3.get_values_by_height(branch_lens3, 0), branch_lens3)
 
 
     # tests if the branch lengths from the tree files are read correctly
@@ -93,16 +100,27 @@ class TestTree(unittest.TestCase):
         t2 = TreeHandler.read("test/data/simple2.tree")
         t3 = TreeHandler.read("test/data/simple3.tree")
         t4 = TreeHandler.read("test/data/star.tree")
-        np.testing.assert_equal(t1.branch_lengths[:,0], np.array([0.3,0.4,0.1,0.2,0.5]))
-        np.testing.assert_equal(t2.branch_lengths[:,0], np.array([0.1,0.1,0.3,0.4,0.1,0.2,0.5]))
-        np.testing.assert_equal(t3.branch_lengths[:,0], np.array([0.1,0.2,0.6,0.7,0.4,0.9,0.3,0.8,0.5,1.]))
-        np.testing.assert_equal(t4.branch_lengths[:,0], np.array([0.1,0.2,0.4,0.1]))
-        np.testing.assert_equal(t1.get_branch_lengths_by_depth(1)[:,0], np.array([0.1, 0.2, 0.5]))
-        np.testing.assert_equal(t1.get_branch_lengths_by_depth(2)[:,0], np.array([0.3, 0.4]))
-        np.testing.assert_equal(t2.get_branch_lengths_by_depth(1)[:,0], np.array([0.1, 0.2, 0.5]))
-        np.testing.assert_equal(t2.get_branch_lengths_by_depth(2)[:,0], np.array([0.3, 0.4]))
-        np.testing.assert_equal(t2.get_branch_lengths_by_depth(3)[:,0], np.array([0.1, 0.1]))
-        np.testing.assert_equal(t4.get_branch_lengths_by_depth(1)[:,0], np.array([0.1, 0.2, 0.4, 0.1]))
+        np.testing.assert_equal(t1.branch_lengths[:,0], np.array([.1, .2, .3, .4, .5]))
+        np.testing.assert_equal(t2.branch_lengths[:,0], np.array([.1, .2, .3, .1, .1, .4, .5]))
+        np.testing.assert_equal(t3.branch_lengths[:,0], np.array([.1, .2, .4, .9, .6, .7, .3, .8, .5, 1.]))
+        np.testing.assert_equal(t4.branch_lengths[:,0], np.array([.1, .2, .4, .1]))
+        np.testing.assert_equal(t1.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .3, .4]))
+        np.testing.assert_equal(t1.get_branch_lengths_by_height(1)[:,0], np.array([.5]))
+        np.testing.assert_equal(t2.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .3, .1, .1]))
+        np.testing.assert_equal(t2.get_branch_lengths_by_height(1)[:,0], np.array([.4]))
+        np.testing.assert_equal(t2.get_branch_lengths_by_height(2)[:,0], np.array([.5]))
+        np.testing.assert_equal(t4.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .4, .1]))
+
+
+    def test_parent_indices(self):
+        t1 = TreeHandler.read("test/data/simple.tree")
+        t2 = TreeHandler.read("test/data/simple2.tree")
+        t3 = TreeHandler.read("test/data/simple3.tree")
+        t4 = TreeHandler.read("test/data/star.tree")
+        np.testing.assert_equal(t1.parent_indices, np.array([5, 5, 4, 4, 5]))
+        np.testing.assert_equal(t2.parent_indices, np.array([7, 7,  6, 5, 5, 6, 7]))
+        np.testing.assert_equal(t3.parent_indices, np.array([6, 6, 8, 9, 7, 7, 8, 9, 10, 10]))
+        np.testing.assert_equal(t4.parent_indices, np.array([4, 4, 4, 4]))
 
 
 
@@ -230,15 +248,14 @@ class TestModel(unittest.TestCase):
         I1 = np.dot(get_transitions(0.3), G) #need matrix transpose if not symmetric
         I2 = np.array([self.get_ref_star(i, obs_at_leaves[2:3], [0.4]) for i in range(4)])
         I = I1 * I2
-        print("I1", I1)
-        print("I2", I2)
+
         J = np.dot(get_transitions(0.8), H)
         J *= np.array([self.get_ref_star(i, obs_at_leaves[3:4], [0.9]) for i in range(4)])
 
         K = np.dot(get_transitions(0.5), I)
         K *= np.dot(get_transitions(1.), J)
 
-        return I
+        return K
     
 
     def get_simple3_inputs_refs(self):
@@ -266,4 +283,4 @@ class TestModel(unittest.TestCase):
                                                     leaves_are_probabilities=True,
                                                     return_probabilities=True)
         self.assertEqual(X.shape, (5,5,1,4))  
-        np.testing.assert_almost_equal(X[2,:,0], refs)
+        np.testing.assert_almost_equal(X[-1,:,0], refs)
