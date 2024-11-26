@@ -8,11 +8,11 @@ backend = util.load_backend()
 """
 Computes the partial log-likelihoods at all internal (ancestral) nodes in the tree 
 given logits at the leaves and a tree topology.
-Supports multiple models.
+Supports multiple models with broadcasting for rates and leaves in the model dimension.
 Uses a vectorized implementation of Felsenstein's pruning algorithm
 that treats models, sequence positions and all nodes within a tree layer in parallel.
 Args:
-    leaves: Logits of all symbols at all leaves of shape (num_leaves, L, models, d) or (num_leaves, L, 1, d). 
+    leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d). 
     leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
     tree_handler: TreeHandler object
     rate_matrix: Rate matrix of shape (models, d, d)
@@ -20,8 +20,8 @@ Args:
     leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
     return_probabilities: If True, return probabilities instead of logits.
 Returns:
-    Ancestral logits of shape (L, models, d) if return_only_root 
-    else shape (num_ancestral_nodes, L, models, d)
+    Ancestral logits of shape (models, L, d) if return_only_root 
+    else shape (num_ancestral_nodes, models, L, d)
 """
 #@backend.decorator
 def compute_ancestral_probabilities(leaves, leaf_names,
@@ -32,8 +32,7 @@ def compute_ancestral_probabilities(leaves, leaf_names,
     if leaves_are_probabilities:
         leaves = backend.logits_from_probs(leaves)
 
-    num_anc = tree_handler.num_nodes - tree_handler.num_leaves
-    anc_logliks = backend.get_ancestral_logits_init_tensor(leaves, num_anc)
+    anc_logliks = backend.get_ancestral_logits_init_tensor(leaves, tree_handler.num_models, tree_handler.num_anc)
 
     # reorder the leaves to match the tree handlers internal order
     X = tree_handler.reorder(leaves, leaf_names)
@@ -47,7 +46,7 @@ def compute_ancestral_probabilities(leaves, leaf_names,
 
         # aggregate over child nodes
         parent_indices = tree_handler.get_parent_indices_by_height(height)
-        anc_logliks += backend.aggregate_children_log_probs(T, parent_indices-tree_handler.num_leaves, num_anc)
+        anc_logliks += backend.aggregate_children_log_probs(T, parent_indices-tree_handler.num_leaves, tree_handler.num_anc)
 
         X = tree_handler.get_values_by_height(anc_logliks, height+1, leaves_included=False)
 
@@ -60,13 +59,13 @@ def compute_ancestral_probabilities(leaves, leaf_names,
 """
 Computes log P(leaves | tree, rate_matrix).
 Args:
-    leaves: Logits of all symbols at all leaves of shape (num_leaves, L, models, d).
+    leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d).
     tree_handler: TreeHandler object
     rate_matrix: Rate matrix of shape (models, d, d)
     equilibrium_logits: Equilibrium distribution logits of shape (models, d).
     leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
 Returns:
-    Log-likelihoods of shape (L, models).
+    Log-likelihoods of shape (models, L).
 """
 @backend.decorator
 def loglik(leaves, leaf_names, tree_handler : TreeHandler, rate_matrix, equilibrium_logits, 

@@ -54,10 +54,12 @@ class TreeHandler():
 
     """ Sets the branch lengths of the tree.
     Args:
-        branch_lengths: A tensor of shape (num_nodes-1, ...) representing the branch lengths of each node to its parent.
+        branch_lengths: A tensor of shape (num_nodes-1, k) representing the branch lengths of each node to its parent.
+                        k is the number of models
     """
     def set_branch_lengths(self, branch_lengths):
         self.branch_lengths = branch_lengths
+        self.num_models = branch_lengths.shape[1]
 
 
     """ Retrieves a vector with the branch lengths for each node with the given height.
@@ -164,6 +166,7 @@ class TreeHandler():
         # map each node to the height of its subtree
         node_queue = self.bio_tree.get_terminals(order="preorder")
         self.num_leaves = len(node_queue)
+        self.num_anc = self.num_nodes - self.num_leaves
         while node_queue:
             u = node_queue.pop(0) # leftmost unfinished node
             u_data = self.nodes[u.name]

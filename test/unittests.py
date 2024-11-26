@@ -164,10 +164,9 @@ class TestBackendTF(unittest.TestCase):
 class TestModel(unittest.TestCase):
     
     # computes the correct likelihood of a star-shaped tree when
-    # a Jukes-Cantor model with mue=4/3 is used and
+    # a Jukes-Cantor model is used and
     # character z is at the root
-    def get_ref_star(self, z, obs_at_leaves, t = [0.1, 0.2, 0.4, 0.1]):
-        mue=4./3
+    def get_ref_star(self, z, obs_at_leaves, t = [0.1, 0.2, 0.4, 0.1], mue=4./3):
         p = []
         for i,x in enumerate(obs_at_leaves):
             if x == z:
@@ -175,6 +174,16 @@ class TestModel(unittest.TestCase):
             else:
                 p.append(1./4 - 1./4 * np.exp(-mue*t[i]))
         return np.prod(p)
+    
+
+    def make_jukes_cantor_rate_matrix(self, mue=4./3):
+        d = -3./4*mue
+        x = mue/4
+        rate_matrix = np.array([[[d, x, x, x], 
+                                 [x, d, x, x], 
+                                 [x, x, d, x], 
+                                 [x, x, x, d]]])
+        return rate_matrix
 
 
     def get_star_inputs_refs(self):
@@ -185,12 +194,9 @@ class TestModel(unittest.TestCase):
         refs = np.array([[self.get_ref_star(i, leaves[:,j]) for i in range(4)] for j in range(3)])
         # one-hot encode the leaves
         leaves = np.eye(4)[leaves]
-        leaves = leaves[:,:,np.newaxis]
+        leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
-        rate_matrix = np.array([[[-1., 1./3, 1./3, 1./3], 
-                                 [1./3, -1, 1./3, 1./3], 
-                                 [1./3, 1./3, -1, 1./3], 
-                                 [1./3, 1./3, 1./3, -1]]])
+        rate_matrix = self.make_jukes_cantor_rate_matrix()
         return leaves, leaf_names, t, rate_matrix, refs
 
 
@@ -201,7 +207,7 @@ class TestModel(unittest.TestCase):
         X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, 
                                                     leaves_are_probabilities=True,
                                                     return_probabilities=True)
-        np.testing.assert_almost_equal(X[0,:,0], refs)
+        np.testing.assert_almost_equal(X[-1,0], refs)
 
 
     def test_likelihood_star(self):
@@ -209,8 +215,8 @@ class TestModel(unittest.TestCase):
         L = model.loglik(leaves, leaf_names, t, rate_matrix, 
                         equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]),
                         leaves_are_probabilities=True)
-        self.assertEqual(L.shape, (3,1))
-        np.testing.assert_almost_equal(L[:,0], np.log(np.sum(refs, -1)/4))
+        self.assertEqual(L.shape, (1,3))
+        np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4))
 
 
     def test_anc_probs_star_unordered_leaves(self):
@@ -221,11 +227,12 @@ class TestModel(unittest.TestCase):
         X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, 
                                                     leaves_are_probabilities=True,
                                                     return_probabilities=True)
-        np.testing.assert_almost_equal(X[0,:,0], refs)
+        np.testing.assert_almost_equal(X[-1,0], refs)
     
 
     # computes the correct likelihood of simple3.tree when 
     # a Jukes-Cantor model with mue=4/3 is used 
+    # returns a vector of likelihoods for each character at the root K
     #           K
     #        /    \
     #       I      J
@@ -267,7 +274,7 @@ class TestModel(unittest.TestCase):
         refs = np.array([self.get_ref_simple3(leaves[:,j]) for j in range(5)])
         # one-hot encode the leaves
         leaves = np.eye(4)[leaves]
-        leaves = leaves[:,:,np.newaxis]
+        leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D', 'E', 'F']
         rate_matrix = np.array([[[-1., 1./3, 1./3, 1./3], 
                                  [1./3, -1, 1./3, 1./3], 
@@ -282,5 +289,40 @@ class TestModel(unittest.TestCase):
         X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, 
                                                     leaves_are_probabilities=True,
                                                     return_probabilities=True)
-        self.assertEqual(X.shape, (5,5,1,4))  
-        np.testing.assert_almost_equal(X[-1,:,0], refs)
+        self.assertEqual(X.shape, (5,1,5,4))  
+        np.testing.assert_almost_equal(X[-1,0], refs)
+
+
+    def test_multi_model_anc_probs_star(self):
+        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
+
+        # test model dimension with Jukes Cantor for other choices of mue
+        mues = [1., 2.]
+        rate_matrices = [self.make_jukes_cantor_rate_matrix(mue=mue) for mue in mues]
+        refs2 = np.array([[[self.get_ref_star(i, np.argmax(leaves[:,0,j], -1), mue=mue) 
+                                for i in range(4)] for j in range(leaves.shape[2])] for mue in mues])
+        refs_full = np.concatenate([refs[np.newaxis], refs2], axis=0)
+        branch_lengths = t.branch_lengths
+
+        # 1. no broadcasting for rates and leaves
+        rate_matrices_full = np.concatenate([rate_matrix] + rate_matrices, axis=0)
+        branch_lengths_full = np.concatenate([branch_lengths]*3, axis=1)
+        t.set_branch_lengths(branch_lengths_full)
+        leaves_full = np.concatenate([leaves]*3, axis=1)
+
+        X_no_broadcast = model.compute_ancestral_probabilities(leaves_full, leaf_names, t, rate_matrices_full, 
+                                                               leaves_are_probabilities=True,
+                                                               return_probabilities=True)
+        np.testing.assert_almost_equal(X_no_broadcast[-1], refs_full)
+
+        # 2. broadcasting for leaves
+        X_broadcast_leaves = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrices_full, 
+                                                                    leaves_are_probabilities=True,
+                                                                    return_probabilities=True)
+        np.testing.assert_almost_equal(X_broadcast_leaves[-1], refs_full)
+
+        # 3. broadcasting for rates
+        X_broadcast_rates = model.compute_ancestral_probabilities(leaves_full, leaf_names, t, rate_matrix, 
+                                                                 leaves_are_probabilities=True,
+                                                                 return_probabilities=True)
+        np.testing.assert_almost_equal(X_broadcast_rates[-1], np.stack([refs]*3))

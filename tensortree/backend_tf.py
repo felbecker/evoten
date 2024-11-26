@@ -11,9 +11,9 @@ decorator = tf.function
 
 
 """Initializes the ancestral logits tensor with zeros."""
-def get_ancestral_logits_init_tensor(leaves, num_ancestral):
-    _, L, models, d = tf.unstack(tf.shape(leaves), 4)
-    return tf.zeros((num_ancestral, L, models, d), dtype=leaves.dtype)
+def get_ancestral_logits_init_tensor(leaves, models, num_ancestral):
+    _, L, _, d = tf.unstack(tf.shape(leaves), 4)
+    return tf.zeros((num_ancestral, models, L, d), dtype=leaves.dtype)
 
 
 """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 expected mutation per site.
@@ -77,14 +77,14 @@ def make_equilibrium(kernel):
 """
 Computes the probabilities after traversing a branch when starting with distributions X.
 Args:
-    X: tensor with logits of shape (n, L, k, d)
-    branch_probabilities: tensor of shape (n, k, d, d)
+    X: tensor with logits of shape (n, k, L, d). 
+    branch_probabilities: tensor of shape (n, k, d, d). 
 Returns:
-    logits of shape (n, L, k, d)
+    logits of shape (n, k, L, d)
 """
 def traverse_branch(X, branch_probabilities):
     X = probs_from_logits(X)
-    X = tf.einsum("nLkd,nkdz -> nLkz", X, branch_probabilities)
+    X = tf.matmul(X, branch_probabilities)
     X = logits_from_probs(X)
     return X
 
@@ -92,11 +92,11 @@ def traverse_branch(X, branch_probabilities):
 r"""
 Aggregates the partial log-likelihoods of child nodes.
 Args:
-    X: tensor of shape (n, L, k, d)
+    X: tensor of shape (n, ...)
     parent_map: A list-like object of shape (n) that contains the index of parent nodes.
     num_ancestral: Total number of ancestral nodes.
 Returns:
-    tensor of shape (num_ancestral, L, k, d).
+    tensor of shape (num_ancestral, ...).
 """
 def aggregate_children_log_probs(X, parent_map, num_ancestral):
     return tf.math.unsorted_segment_sum(X, parent_map, num_ancestral)
@@ -104,13 +104,13 @@ def aggregate_children_log_probs(X, parent_map, num_ancestral):
 """
 Computes log likelihoods given root logits and equilibrium distributions.
 Args:
-    root_logits: Logits at the root node of shape (L, k, d)
+    root_logits: Logits at the root node of shape (k, L, d)
     equilibrium_logits: Equilibrium distribution logits of shape (k, d)
 Returns:
-    Log-likelihoods of shape (L, k)
+    Log-likelihoods of shape (k, L)
 """
 def loglik_from_root_logits(root_logits, equilibrium_logits):
-    return tf.math.reduce_logsumexp(root_logits + equilibrium_logits, axis=-1)
+    return tf.math.reduce_logsumexp(root_logits + equilibrium_logits[:,tf.newaxis], axis=-1)
 
 
 """ Computes element-wise logarithm with output_i=log_zero_val where x_i=0.
