@@ -46,7 +46,8 @@ def compute_ancestral_probabilities(leaves, leaf_names,
 
         # aggregate over child nodes
         parent_indices = tree_handler.get_parent_indices_by_height(height)
-        anc_logliks += backend.aggregate_children_log_probs(T, parent_indices-tree_handler.num_leaves, tree_handler.num_anc)
+        Z = backend.aggregate_children_log_probs(T, parent_indices-tree_handler.num_leaves, tree_handler.num_anc)
+        anc_logliks += Z
 
         X = tree_handler.get_values_by_height(anc_logliks, height+1, leaves_included=False)
 

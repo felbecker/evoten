@@ -3,7 +3,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import unittest
 import numpy as np
 from tensortree.tree_handler import TreeHandler
-from tensortree import model
+from tensortree import model, util, tree_handler
 
 
 class TestTree(unittest.TestCase):
@@ -123,35 +123,36 @@ class TestTree(unittest.TestCase):
         np.testing.assert_equal(t4.parent_indices, np.array([4, 4, 4, 4]))
 
 
+class TestBackend():
 
-class TestBackendTF(unittest.TestCase):
-
-    def test_branch_lengths(self):
-        from tensortree.backend_tf import make_branch_lengths
+    def _test_branch_lengths(self, backend, decode=False):
         kernel = np.array([[-3., -1., 0.], [1., 2., 3.]])
-        branch_lengths = make_branch_lengths(kernel)
+        branch_lengths = backend.make_branch_lengths(kernel)
+        if decode:
+            branch_lengths = branch_lengths.numpy()
         self.assertTrue(np.all(branch_lengths > 0.))
 
 
-    def test_rate_matrix(self):
-        from tensortree.backend_tf import make_rate_matrix
+    def _test_rate_matrix(self, backend, decode=False):
         # 3 jukes cantor models
         exchangeabilities = [[[0., mue, mue], [mue, 0., mue], [mue, mue, 0.]] for mue in [1., 2., 5.]]
         equilibrium = np.ones((3,3)) / 3.
-        rate_matrix = make_rate_matrix(exchangeabilities, equilibrium)
+        rate_matrix = backend.make_rate_matrix(exchangeabilities, equilibrium)
         #since the matrix is normalized, all mue should yield the same result
+        if decode:
+            rate_matrix = rate_matrix.numpy()
         ref = np.array([[[-1., .5, .5], [.5, -1, .5], [.5, .5, -1]]]*3)
         np.testing.assert_allclose(rate_matrix, ref)
 
 
-    def test_transition_probs(self):
-        from tensortree.backend_tf import make_rate_matrix
-        from tensortree.backend_tf import make_transition_probs
+    def _test_transition_probs(self, backend, decode=False):
         # 3 jukes cantor models
         exchangeabilities = [[[0., mue, mue], [mue, 0., mue], [mue, mue, 0.]] for mue in [1., 2., 5.]]
         equilibrium = np.ones((3,3)) / 3.
-        rate_matrix = make_rate_matrix(exchangeabilities, equilibrium)
-        P = make_transition_probs(rate_matrix, np.ones((1, 1)))
+        rate_matrix = backend.make_rate_matrix(exchangeabilities, equilibrium)
+        P = backend.make_transition_probs(rate_matrix, np.ones((1, 1)))
+        if decode:
+            P = P.numpy()
         # test if matrix is probabilistic
         np.testing.assert_almost_equal(np.sum(P, -1), 1.) 
         # unit time, so expect 1 mutation per site
@@ -160,8 +161,43 @@ class TestBackendTF(unittest.TestCase):
         np.testing.assert_almost_equal(number_of_expected_mutations, 1.) 
 
 
+class TestBackendTF(unittest.TestCase, TestBackend):
 
-class TestModel(unittest.TestCase):
+    def test_branch_lengths(self):
+        import tensortree.backend_tf as backend_tf
+        self._test_branch_lengths(backend_tf)
+
+    def test_rate_matrix(self):
+        import tensortree.backend_tf as backend_tf
+        self._test_rate_matrix(backend_tf)
+    
+    def test_transition_probs(self):
+        import tensortree.backend_tf as backend_tf
+        self._test_transition_probs(backend_tf)
+    
+
+class TestBackendPytorch(unittest.TestCase, TestBackend):
+
+    def test_branch_lengths(self):
+        import tensortree.backend_pytorch as backend_pytorch
+        self._test_branch_lengths(backend_pytorch, decode=True)
+
+    def test_rate_matrix(self):
+        import tensortree.backend_pytorch as backend_pytorch
+        self._test_rate_matrix(backend_pytorch, decode=True)
+    
+    def test_transition_probs(self):
+        import tensortree.backend_pytorch as backend_pytorch
+        self._test_transition_probs(backend_pytorch, decode=True)
+
+
+
+class TestModelTF(unittest.TestCase):
+
+    def setUp(self):
+        os.environ["TENSORTREE_BACKEND"] = "tensorflow"
+        model.backend = util.load_backend()
+        tree_handler.backend = model.backend
     
     # computes the correct likelihood of a star-shaped tree when
     # a Jukes-Cantor model is used and
@@ -326,3 +362,12 @@ class TestModel(unittest.TestCase):
                                                                  leaves_are_probabilities=True,
                                                                  return_probabilities=True)
         np.testing.assert_almost_equal(X_broadcast_rates[-1], np.stack([refs]*3))
+
+
+
+class TestModelPytorch(TestModelTF):
+    
+    def setUp(self):
+        os.environ["TENSORTREE_BACKEND"] = "pytorch"
+        model.backend = util.load_backend()
+        tree_handler.backend = model.backend
