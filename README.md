@@ -14,6 +14,8 @@ import tensortree
 from io import StringIO
 import numpy as np
 
+tensortree.set_backend("tensorflow")
+
 # parse a tree 
 handle = StringIO("(A:0.1,B:0.2,(C:0.3,D:0.4):0.5);")
 tree = tensortree.TreeHandler.read(handle)
