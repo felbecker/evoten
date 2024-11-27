@@ -36,3 +36,7 @@ L = tensortree.model.loglik(leaves, leaf_names, tree, rate_matrix,
                 leaves_are_probabilities=True)
 ```
 `[[-7.6051, -5.7626, -7.2497]]`
+
+Depending on the chosen backend, L is a TensorFlow or Pytorch Tensor that can be differentiated with respect to leaves, branch lengths or rates.
+
+For more detailed examples please see unit tests.
