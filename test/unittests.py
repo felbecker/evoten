@@ -2,6 +2,8 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import unittest
 import numpy as np
+import tensorflow as tf
+import torch
 from tensortree.tree_handler import TreeHandler
 from tensortree import model, util, tree_handler
 
@@ -371,3 +373,95 @@ class TestModelPytorch(TestModelTF):
         os.environ["TENSORTREE_BACKEND"] = "pytorch"
         model.backend = util.load_backend()
         tree_handler.backend = model.backend
+
+
+
+class TestGradientTF(unittest.TestCase):
+
+    def setUp(self):
+        os.environ["TENSORTREE_BACKEND"] = "tensorflow"
+        model.backend = util.load_backend()
+        tree_handler.backend = model.backend
+
+
+    def get_star_inputs(self):
+        t = TreeHandler.read("test/data/star.tree")
+        # leaves will have shape (num_leaves, L, models, d)
+        leaves = np.array([[0,2,3], [1,1,0], [2,1,0], [3,1,2]])
+        # one-hot encode the leaves
+        leaves = np.eye(4)[leaves]
+        leaves = leaves[:,np.newaxis]
+        leaf_names = ['A', 'B', 'C', 'D']
+        rate_matrix = np.array([[[-1., 1./3, 1./3, 1./3], 
+                                 [1./3, -1, 1./3, 1./3], 
+                                 [1./3, 1./3, -1, 1./3], 
+                                 [1./3, 1./3, 1./3, -1]]])
+        return leaves, leaf_names, t, rate_matrix
+    
+
+    def test_gradient_star(self):
+        leaves, leaf_names, t, rate_matrix = self.get_star_inputs()
+        # we want to differentiate the likelihood 
+        # w.r.t. to leaves, branch lengths or rate matrix
+        # create a variable for the branch lengths and initialize it with the
+        # branch lengths parsed from the tree file
+        B = tf.Variable(t.branch_lengths)
+        # make the tree use the variable when computing the lilkehood
+        t.set_branch_lengths(B) 
+
+        X = tf.Variable(leaves)
+        Q = tf.Variable(rate_matrix)
+
+        # compute the likelihood and test if it can be differentiated
+        # w.r.t. to the leaves, branch lengths and rate matrix
+        with tf.GradientTape(persistent=True) as tape:
+            L = model.loglik(X, leaf_names, t, Q, 
+                            equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]),
+                            leaves_are_probabilities=True)
+            
+        # currently, we only test if the gradient can be computed without errors
+        dL_dB = tape.gradient(L, B)
+        dL_dQ = tape.gradient(L, Q)
+        dL_dX = tape.gradient(L, X)
+
+        self.assertTrue(not np.any(np.isnan(dL_dB.numpy())))
+        self.assertTrue(not np.any(np.isnan(dL_dQ.numpy())))
+        self.assertTrue(not np.any(np.isnan(dL_dX.numpy())))
+        
+
+class TestGradientPytorch(TestGradientTF):
+    
+    def setUp(self):
+        os.environ["TENSORTREE_BACKEND"] = "pytorch"
+        model.backend = util.load_backend()
+        tree_handler.backend = model.backend    
+
+    
+    def test_gradient_star(self):
+        leaves, leaf_names, t, rate_matrix = self.get_star_inputs()
+        
+        B = torch.nn.Parameter(torch.tensor(t.branch_lengths))
+        # make the tree use the variable when computing the lilkehood
+        t.set_branch_lengths(B) 
+
+        X = torch.nn.Parameter(torch.tensor(leaves))
+        Q = torch.nn.Parameter(torch.tensor(rate_matrix))
+
+        # compute the likelihood and test if it can be differentiated
+        # w.r.t. to the leaves, branch lengths and rate matrix
+        L = model.loglik(X, leaf_names, t, Q, 
+                        equilibrium_logits=torch.log(torch.tensor([[1./4, 1./4, 1./4, 1./4]])),
+                        leaves_are_probabilities=True)
+        
+        # sum up, in pytorch grad can be implicitly created only for scalar outputs
+        L = L.sum()
+        
+        # currently, we only test if the gradient can be computed without errors
+        L.backward()
+        dL_dB = B.grad
+        dL_dQ = Q.grad
+        dL_dX = X.grad
+
+        self.assertTrue(not np.any(np.isnan(dL_dB.detach().numpy())))
+        self.assertTrue(not np.any(np.isnan(dL_dQ.detach().numpy())))
+        self.assertTrue(not np.any(np.isnan(dL_dX.detach().numpy())))
