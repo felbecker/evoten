@@ -17,10 +17,11 @@ Args:
     exchangeabilities: Symmetric, positive-semidefinite exchangeability matrices with zero diagonal. Shape: (k, d, d) 
     equilibrium_kernel: A vector of relative frequencies. Shape: (k, d) 
     epsilon: Small value to avoid division by zero.
+    normalized: If True, normalize the rate matrix by the expected mutation rate.
 Returns:
     Normalized rate matrices. Output shape: (k, d, d) 
-"""
-def make_rate_matrix(exchangeabilities, equilibrium, epsilon=1e-16):
+""" 
+def make_rate_matrix(exchangeabilities, equilibrium, epsilon=1e-16, normalized=True):
     exchangeabilities = _ensure_tensor(exchangeabilities)
     equilibrium = _ensure_tensor(equilibrium)
     Q = torch.mul(exchangeabilities, equilibrium[:,None])
@@ -30,9 +31,10 @@ def make_rate_matrix(exchangeabilities, equilibrium, epsilon=1e-16):
     eye = eye.repeat(diag.shape[0], 1, 1)
     Q -= diag * eye
     # normalize
-    mue = equilibrium[..., None] * diag
-    mue = torch.sum(mue, dim=-2, keepdim=True)
-    Q /= torch.maximum(mue, torch.tensor(epsilon))
+    if normalized:
+        mue = equilibrium[..., None] * diag
+        mue = torch.sum(mue, dim=-2, keepdim=True)
+        Q /= torch.maximum(mue, torch.tensor(epsilon))
     return Q
 
 
@@ -102,7 +104,7 @@ Returns:
     tensor of shape (num_ancestral, ...).
 """
 def aggregate_children_log_probs(X, parent_map, num_ancestral):
-    parent_map = _ensure_tensor(parent_map)
+    parent_map = _ensure_tensor(parent_map).to(X.device)
     #return tf.math.unsorted_segment_sum(X, parent_map, num_ancestral)
     Y = torch.zeros(num_ancestral, *X.shape[1:], dtype=X.dtype, device=X.device)
     I = parent_map[:,None,None,None].expand(X.shape)
@@ -146,14 +148,6 @@ def reorder(tensor, permutation, axis=0):
 
 def concat(tensors, axis=0):
     return torch.cat(tensors, axis=axis)
-
-
-""" Optional decorator for top-level functions (not used with pytorch).
-"""
-def decorator(func, *args, **kwargs):
-    def wrapper_func(*args, **kwargs):
-        return func(*args, **kwargs)
-    return wrapper_func
 
 
 """Initializes the ancestral logits tensor with zeros."""

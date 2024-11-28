@@ -1,11 +1,7 @@
 from Bio import Phylo 
 import numpy as np
-import tensortree.util as util
+from tensortree.util import backend
 from dataclasses import dataclass
-
-
-backend = util.load_backend()
-
 
 
 @dataclass

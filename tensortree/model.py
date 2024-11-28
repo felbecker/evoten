@@ -1,8 +1,6 @@
 from tensortree.tree_handler import TreeHandler
-import tensortree.util as util
+from tensortree.util import backend
 import numpy as np
-
-backend = util.load_backend()
 
 
 """
@@ -23,7 +21,6 @@ Returns:
     Ancestral logits of shape (models, L, d) if return_only_root 
     else shape (num_ancestral_nodes, models, L, d)
 """
-#@backend.decorator
 def compute_ancestral_probabilities(leaves, leaf_names,
                                     tree_handler : TreeHandler, rate_matrix, 
                                     return_only_root = False, leaves_are_probabilities = False,
@@ -68,7 +65,6 @@ Args:
 Returns:
     Log-likelihoods of shape (models, L).
 """
-@backend.decorator
 def loglik(leaves, leaf_names, tree_handler : TreeHandler, rate_matrix, equilibrium_logits, 
            leaves_are_probabilities=False):
     root_logits = compute_ancestral_probabilities(leaves, leaf_names, tree_handler, rate_matrix, 

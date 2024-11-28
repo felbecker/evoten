@@ -1,14 +1,17 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1" #run unit tests on CPU for speed and to avoid interference 
 import unittest
 import numpy as np
 import tensorflow as tf
 import torch
 from tensortree.tree_handler import TreeHandler
-from tensortree import model, util, tree_handler
+from tensortree import model, util, tree_handler, substitution_models
 
 
 class TestTree(unittest.TestCase):
+    
+    def setUp(self):
+        util.set_backend("tensorflow_uncompiled")  
 
     def test_indices(self):
         # tensortree sorts nodes by height and left to right within a layer
@@ -137,8 +140,7 @@ class TestBackend():
 
     def _test_rate_matrix(self, backend, decode=False):
         # 3 jukes cantor models
-        exchangeabilities = [[[0., mue, mue], [mue, 0., mue], [mue, mue, 0.]] for mue in [1., 2., 5.]]
-        equilibrium = np.ones((3,3)) / 3.
+        exchangeabilities, equilibrium = substitution_models.jukes_cantor(mue = [1., 2., 5.], d=3)
         rate_matrix = backend.make_rate_matrix(exchangeabilities, equilibrium)
         #since the matrix is normalized, all mue should yield the same result
         if decode:
@@ -197,9 +199,7 @@ class TestBackendPytorch(unittest.TestCase, TestBackend):
 class TestModelTF(unittest.TestCase):
 
     def setUp(self):
-        os.environ["TENSORTREE_BACKEND"] = "tensorflow"
-        model.backend = util.load_backend()
-        tree_handler.backend = model.backend
+        util.set_backend("tensorflow_uncompiled")
     
     # computes the correct likelihood of a star-shaped tree when
     # a Jukes-Cantor model is used and
@@ -212,16 +212,6 @@ class TestModelTF(unittest.TestCase):
             else:
                 p.append(1./4 - 1./4 * np.exp(-mue*t[i]))
         return np.prod(p)
-    
-
-    def make_jukes_cantor_rate_matrix(self, mue=4./3):
-        d = -3./4*mue
-        x = mue/4
-        rate_matrix = np.array([[[d, x, x, x], 
-                                 [x, d, x, x], 
-                                 [x, x, d, x], 
-                                 [x, x, x, d]]])
-        return rate_matrix
 
 
     def get_star_inputs_refs(self):
@@ -234,7 +224,8 @@ class TestModelTF(unittest.TestCase):
         leaves = np.eye(4)[leaves]
         leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
-        rate_matrix = self.make_jukes_cantor_rate_matrix()
+        R, pi = substitution_models.jukes_cantor(4./3)
+        rate_matrix = model.backend.make_rate_matrix(R, pi)
         return leaves, leaf_names, t, rate_matrix, refs
 
 
@@ -336,14 +327,15 @@ class TestModelTF(unittest.TestCase):
 
         # test model dimension with Jukes Cantor for other choices of mue
         mues = [1., 2.]
-        rate_matrices = [self.make_jukes_cantor_rate_matrix(mue=mue) for mue in mues]
+        R, pi = substitution_models.jukes_cantor(mues) 
+        rate_matrices = model.backend.make_rate_matrix(R, pi, normalized=False)
         refs2 = np.array([[[self.get_ref_star(i, np.argmax(leaves[:,0,j], -1), mue=mue) 
                                 for i in range(4)] for j in range(leaves.shape[2])] for mue in mues])
         refs_full = np.concatenate([refs[np.newaxis], refs2], axis=0)
         branch_lengths = t.branch_lengths
 
         # 1. no broadcasting for rates and leaves
-        rate_matrices_full = np.concatenate([rate_matrix] + rate_matrices, axis=0)
+        rate_matrices_full = np.concatenate([rate_matrix, rate_matrices], axis=0)
         branch_lengths_full = np.concatenate([branch_lengths]*3, axis=1)
         t.set_branch_lengths(branch_lengths_full)
         leaves_full = np.concatenate([leaves]*3, axis=1)
@@ -370,18 +362,13 @@ class TestModelTF(unittest.TestCase):
 class TestModelPytorch(TestModelTF):
     
     def setUp(self):
-        os.environ["TENSORTREE_BACKEND"] = "pytorch"
-        model.backend = util.load_backend()
-        tree_handler.backend = model.backend
-
+        util.set_backend("pytorch")
 
 
 class TestGradientTF(unittest.TestCase):
 
     def setUp(self):
-        os.environ["TENSORTREE_BACKEND"] = "tensorflow"
-        model.backend = util.load_backend()
-        tree_handler.backend = model.backend
+        util.set_backend("tensorflow_uncompiled")
 
 
     def get_star_inputs(self):
@@ -392,10 +379,8 @@ class TestGradientTF(unittest.TestCase):
         leaves = np.eye(4)[leaves]
         leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
-        rate_matrix = np.array([[[-1., 1./3, 1./3, 1./3], 
-                                 [1./3, -1, 1./3, 1./3], 
-                                 [1./3, 1./3, -1, 1./3], 
-                                 [1./3, 1./3, 1./3, -1]]])
+        R, pi = substitution_models.jukes_cantor(4./3)
+        rate_matrix = model.backend.make_rate_matrix(R, pi)
         return leaves, leaf_names, t, rate_matrix
     
 
@@ -432,9 +417,7 @@ class TestGradientTF(unittest.TestCase):
 class TestGradientPytorch(TestGradientTF):
     
     def setUp(self):
-        os.environ["TENSORTREE_BACKEND"] = "pytorch"
-        model.backend = util.load_backend()
-        tree_handler.backend = model.backend    
+        util.set_backend("pytorch")  
 
     
     def test_gradient_star(self):
@@ -445,7 +428,7 @@ class TestGradientPytorch(TestGradientTF):
         t.set_branch_lengths(B) 
 
         X = torch.nn.Parameter(torch.tensor(leaves))
-        Q = torch.nn.Parameter(torch.tensor(rate_matrix))
+        Q = torch.nn.Parameter(rate_matrix.clone().detach())
 
         # compute the likelihood and test if it can be differentiated
         # w.r.t. to the leaves, branch lengths and rate matrix

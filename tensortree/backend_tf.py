@@ -11,18 +11,20 @@ Args:
     exchangeabilities: Symmetric, positive-semidefinite exchangeability matrices with zero diagonal. Shape: (k, d, d) 
     equilibrium_kernel: A vector of relative frequencies. Shape: (k, d) 
     epsilon: Small value to avoid division by zero.
+    normalized: If True, the rate matrices are normalized.
 Returns:
     Normalized rate matrices. Output shape: (k, d, d) 
 """
-def make_rate_matrix(exchangeabilities, equilibrium, epsilon=1e-16):
+def make_rate_matrix(exchangeabilities, equilibrium, epsilon=1e-16, normalized=True):
     Q = exchangeabilities *  tf.expand_dims(equilibrium, 1)
     diag = tf.reduce_sum(Q, axis=-1, keepdims=True)
     eye = tf.eye(tf.shape(diag)[1], batch_shape=tf.shape(diag)[:1], dtype=diag.dtype)
     Q -= diag * eye
     # normalize
-    mue = tf.expand_dims(equilibrium, -1) * diag
-    mue = tf.reduce_sum(mue, axis=-2, keepdims=True)
-    Q /= tf.maximum(mue, epsilon)
+    if normalized:
+        mue = tf.expand_dims(equilibrium, -1) * diag
+        mue = tf.reduce_sum(mue, axis=-2, keepdims=True)
+        Q /= tf.maximum(mue, epsilon)
     return Q
 
 
@@ -125,11 +127,6 @@ def reorder(tensor, permutation, axis=0):
 
 def concat(tensors, axis=0):
     return tf.concat(tensors, axis=axis)
-
-
-""" Optional decorator for top-level functions
-"""
-decorator = tf.function
 
 
 """Initializes the ancestral logits tensor with zeros."""
