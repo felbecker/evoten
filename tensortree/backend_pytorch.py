@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from Bio.Phylo import BaseTree
 from functools import partial
+from tensortree import util
 
 
 
@@ -127,7 +128,7 @@ def loglik_from_root_logits(root_logits, equilibrium_logits):
 """
 def logits_from_probs(probs, log_zero_val=-1e3):
     probs = _ensure_tensor(probs)
-    epsilon = torch.tensor(np.finfo(np.float32).tiny)
+    epsilon = torch.tensor(np.finfo(util.default_dtype).tiny)
     logits = torch.log(torch.maximum(probs, epsilon))
     zero_mask = (probs == 0).to(logits.dtype)
     logits = (1-zero_mask) * logits + zero_mask * log_zero_val

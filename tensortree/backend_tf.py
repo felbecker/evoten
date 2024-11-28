@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 from Bio.Phylo import BaseTree
 from functools import partial
+from tensortree import util
 
 
 
@@ -108,7 +109,7 @@ def loglik_from_root_logits(root_logits, equilibrium_logits):
 """ Computes element-wise logarithm with output_i=log_zero_val where x_i=0.
 """
 def logits_from_probs(probs, log_zero_val=-1e3):
-    epsilon = tf.constant(np.finfo(np.float32).tiny, dtype=probs.dtype)
+    epsilon = tf.constant(np.finfo(util.default_dtype).tiny, dtype=probs.dtype)
     logits = tf.math.log(tf.maximum(probs, epsilon))
     zero_mask = tf.cast(tf.equal(probs, 0), dtype=logits.dtype)
     logits = (1-zero_mask) * logits + zero_mask * log_zero_val

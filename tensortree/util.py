@@ -2,6 +2,9 @@ import os
 import numpy as np
 
 
+
+default_dtype = np.float32
+
 ####################################################################################################
 # Backend
 ####################################################################################################
@@ -71,4 +74,4 @@ backend = Backend(NullModule())
 """
 def encode_one_hot(sequences, alphabet):
     ids = np.array([[alphabet.index(c) for c in seq] for seq in sequences])
-    return np.eye(len(alphabet))[ids]
+    return np.eye(len(alphabet), dtype=default_dtype)[ids]

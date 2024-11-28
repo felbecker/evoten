@@ -1,6 +1,6 @@
 from Bio import Phylo 
 import numpy as np
-from tensortree.util import backend
+from tensortree.util import backend, default_dtype
 from dataclasses import dataclass
 
 
@@ -212,7 +212,7 @@ class TreeHandler():
     """ Initializes the branch lengths of the tree.
     """
     def setup_init_branch_lengths(self):
-        self.init_branch_lengths = np.zeros((self.num_nodes-1, 1)) 
+        self.init_branch_lengths = np.zeros((self.num_nodes-1, 1), dtype=default_dtype) 
         for clade in self.bio_tree.find_clades(order="level"):
             for child in clade:
                 self.init_branch_lengths[self.nodes[child.name].index] = self.bio_tree.distance(clade, child)

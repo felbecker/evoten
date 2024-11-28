@@ -86,16 +86,16 @@ class TestTree(unittest.TestCase):
     def test_get_values_by_height(self): 
         # nodes are sorted by depth 
         t = TreeHandler.read("test/data/simple.tree")
-        branch_lens = np.array([0.1, 0.5, 0.3, 0.7, 0.2])
-        np.testing.assert_equal(t.get_values_by_height(branch_lens, 0), np.array([0.1, 0.5, 0.3, 0.7]))
-        np.testing.assert_equal(t.get_values_by_height(branch_lens, 1), np.array([0.2]))
+        branch_lens = np.array([0.1, 0.5, 0.3, 0.7, 0.2], dtype=util.default_dtype)
+        np.testing.assert_equal(t.get_values_by_height(branch_lens, 0), np.array([0.1, 0.5, 0.3, 0.7], dtype=util.default_dtype))
+        np.testing.assert_equal(t.get_values_by_height(branch_lens, 1), np.array([0.2], dtype=util.default_dtype))
         t2 = TreeHandler.read("test/data/simple2.tree")
-        branch_lens2 = np.array([0.4, 0.6, 0.1, 0.5, 0.3, 0.7, 0.2])
-        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 0), np.array([0.4, 0.6, 0.1, 0.5, 0.3]))
-        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 1), np.array([0.7]))
-        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 2), np.array([0.2]))
+        branch_lens2 = np.array([0.4, 0.6, 0.1, 0.5, 0.3, 0.7, 0.2], dtype=util.default_dtype)
+        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 0), np.array([0.4, 0.6, 0.1, 0.5, 0.3], dtype=util.default_dtype))
+        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 1), np.array([0.7], dtype=util.default_dtype))
+        np.testing.assert_equal(t2.get_values_by_height(branch_lens2, 2), np.array([0.2], dtype=util.default_dtype))
         t3 = TreeHandler.read("test/data/star.tree")
-        branch_lens3 = np.array([0.4, 0.6, 0.1, 0.5])
+        branch_lens3 = np.array([0.4, 0.6, 0.1, 0.5], dtype=util.default_dtype)
         np.testing.assert_equal(t3.get_values_by_height(branch_lens3, 0), branch_lens3)
 
 
@@ -105,16 +105,16 @@ class TestTree(unittest.TestCase):
         t2 = TreeHandler.read("test/data/simple2.tree")
         t3 = TreeHandler.read("test/data/simple3.tree")
         t4 = TreeHandler.read("test/data/star.tree")
-        np.testing.assert_equal(t1.branch_lengths[:,0], np.array([.1, .2, .3, .4, .5]))
-        np.testing.assert_equal(t2.branch_lengths[:,0], np.array([.1, .2, .3, .1, .1, .4, .5]))
-        np.testing.assert_equal(t3.branch_lengths[:,0], np.array([.1, .2, .4, .9, .6, .7, .3, .8, .5, 1.]))
-        np.testing.assert_equal(t4.branch_lengths[:,0], np.array([.1, .2, .4, .1]))
-        np.testing.assert_equal(t1.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .3, .4]))
-        np.testing.assert_equal(t1.get_branch_lengths_by_height(1)[:,0], np.array([.5]))
-        np.testing.assert_equal(t2.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .3, .1, .1]))
-        np.testing.assert_equal(t2.get_branch_lengths_by_height(1)[:,0], np.array([.4]))
-        np.testing.assert_equal(t2.get_branch_lengths_by_height(2)[:,0], np.array([.5]))
-        np.testing.assert_equal(t4.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .4, .1]))
+        np.testing.assert_equal(t1.branch_lengths[:,0], np.array([.1, .2, .3, .4, .5], dtype=util.default_dtype))
+        np.testing.assert_equal(t2.branch_lengths[:,0], np.array([.1, .2, .3, .1, .1, .4, .5], dtype=util.default_dtype))
+        np.testing.assert_equal(t3.branch_lengths[:,0], np.array([.1, .2, .4, .9, .6, .7, .3, .8, .5, 1.], dtype=util.default_dtype))
+        np.testing.assert_equal(t4.branch_lengths[:,0], np.array([.1, .2, .4, .1], dtype=util.default_dtype))
+        np.testing.assert_equal(t1.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .3, .4], dtype=util.default_dtype))
+        np.testing.assert_equal(t1.get_branch_lengths_by_height(1)[:,0], np.array([.5], dtype=util.default_dtype))
+        np.testing.assert_equal(t2.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .3, .1, .1], dtype=util.default_dtype))
+        np.testing.assert_equal(t2.get_branch_lengths_by_height(1)[:,0], np.array([.4], dtype=util.default_dtype))
+        np.testing.assert_equal(t2.get_branch_lengths_by_height(2)[:,0], np.array([.5], dtype=util.default_dtype))
+        np.testing.assert_equal(t4.get_branch_lengths_by_height(0)[:,0], np.array([.1, .2, .4, .1], dtype=util.default_dtype))
 
 
     def test_parent_indices(self):
@@ -211,7 +211,7 @@ class TestModelTF(unittest.TestCase):
                 p.append(1./4 + 3./4 * np.exp(-mue*t[i]))
             else:
                 p.append(1./4 - 1./4 * np.exp(-mue*t[i]))
-        return np.prod(p)
+        return np.prod(p).astype(util.default_dtype)
 
 
     def get_star_inputs_refs(self):
@@ -219,9 +219,9 @@ class TestModelTF(unittest.TestCase):
         # leaves will have shape (num_leaves, L, models, d)
         leaves = np.array([[0,2,3], [1,1,0], [2,1,0], [3,1,2]])
         #compute reference values
-        refs = np.array([[self.get_ref_star(i, leaves[:,j]) for i in range(4)] for j in range(3)])
+        refs = np.array([[self.get_ref_star(i, leaves[:,j]) for i in range(4)] for j in range(3)], dtype=util.default_dtype)
         # one-hot encode the leaves
-        leaves = np.eye(4)[leaves]
+        leaves = np.eye(4, dtype=util.default_dtype)[leaves]
         leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
         R, pi = substitution_models.jukes_cantor(4./3)
@@ -242,7 +242,7 @@ class TestModelTF(unittest.TestCase):
     def test_likelihood_star(self):
         leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
         L = model.loglik(leaves, leaf_names, t, rate_matrix, 
-                        equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]),
+                        equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]).astype(util.default_dtype),
                         leaves_are_probabilities=True)
         self.assertEqual(L.shape, (1,3))
         np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4))
@@ -291,7 +291,7 @@ class TestModelTF(unittest.TestCase):
         K = np.dot(get_transitions(0.5), I)
         K *= np.dot(get_transitions(1.), J)
 
-        return K
+        return K.astype(util.default_dtype)
     
 
     def get_simple3_inputs_refs(self):
@@ -302,13 +302,13 @@ class TestModelTF(unittest.TestCase):
         #compute reference values
         refs = np.array([self.get_ref_simple3(leaves[:,j]) for j in range(5)])
         # one-hot encode the leaves
-        leaves = np.eye(4)[leaves]
+        leaves = np.eye(4, dtype=util.default_dtype)[leaves]
         leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D', 'E', 'F']
         rate_matrix = np.array([[[-1., 1./3, 1./3, 1./3], 
                                  [1./3, -1, 1./3, 1./3], 
                                  [1./3, 1./3, -1, 1./3], 
-                                 [1./3, 1./3, 1./3, -1]]])
+                                 [1./3, 1./3, 1./3, -1]]], dtype=util.default_dtype)
         return leaves, leaf_names, t, rate_matrix, refs
 
 
@@ -376,7 +376,7 @@ class TestGradientTF(unittest.TestCase):
         # leaves will have shape (num_leaves, L, models, d)
         leaves = np.array([[0,2,3], [1,1,0], [2,1,0], [3,1,2]])
         # one-hot encode the leaves
-        leaves = np.eye(4)[leaves]
+        leaves = np.eye(4, dtype=util.default_dtype)[leaves]
         leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
         R, pi = substitution_models.jukes_cantor(4./3)

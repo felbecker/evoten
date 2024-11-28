@@ -1,4 +1,5 @@
 import numpy as np
+from tensortree import util
 
 
 """ Returns the exchangeabilities and equilibrium frequencies for the Jukes-Cantor model.
@@ -8,7 +9,7 @@ Returns:
     symmetric k x d x d  tensor of exchangeabilities and k x d matrix of equilibrium frequencies.
     k is the length of mue or 1 if mue is a scalar.
 """
-def jukes_cantor(mue=4./3, d=4, dtype=np.float64):
+def jukes_cantor(mue=4./3, d=4, dtype=util.default_dtype):
     if isinstance(mue, list):
         mue = np.array(mue, dtype=dtype)
     if np.isscalar(mue):
