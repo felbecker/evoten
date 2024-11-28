@@ -10,7 +10,7 @@ from tensortree import util
 """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 expected mutation per site.
 Args:
     exchangeabilities: Symmetric, positive-semidefinite exchangeability matrices with zero diagonal. Shape: (k, d, d) 
-    equilibrium_kernel: A vector of relative frequencies. Shape: (k, d) 
+    equilibrium: A vector of relative frequencies. Shape: (k, d) 
     epsilon: Small value to avoid division by zero.
     normalized: If True, the rate matrices are normalized.
 Returns:
@@ -61,6 +61,7 @@ def make_symmetric_pos_semidefinite(kernel):
     R -= tf.linalg.diag(tf.linalg.diag_part(R)) #zero diagonal
     return R
 
+
 """Constructs a stack of equilibrium distributions from a parameter kernel.
 """
 def make_equilibrium(kernel):
@@ -76,9 +77,15 @@ Returns:
     logits of shape (n, k, L, d)
 """
 def traverse_branch(X, branch_probabilities):
-    X = probs_from_logits(X)
-    X = tf.matmul(X, branch_probabilities)
-    X = logits_from_probs(X)
+
+    if True:
+        #fast matmul version, but requires conversion, might be numerically unstable
+        X = probs_from_logits(X)
+        X = tf.matmul(X, branch_probabilities, transpose_b=True)
+        X = logits_from_probs(X)
+    else:
+        # slower (no matmul) but more stable? 
+        X = tf.math.reduce_logsumexp(X[..., tf.newaxis, :] + tf.math.log(branch_probabilities[:,:,tf.newaxis]), axis=-1)
     return X
 
 
