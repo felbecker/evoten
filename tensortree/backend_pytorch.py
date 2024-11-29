@@ -69,7 +69,7 @@ Args:
     kernel: Tensor of shape (k, d, d).
 """
 def make_symmetric_pos_semidefinite(kernel):
-    R = 0.5 * (kernel + kernel.transpose([0,2,1])) #make symmetric
+    R = 0.5 * (kernel + kernel.permute((0,2,1))) #make symmetric
     R = torch.nn.functional.softplus(R)
     R -= torch.diag(torch.diagonal(R)) #zero diagonal
     return R
@@ -90,7 +90,7 @@ Returns:
 """
 def traverse_branch(X, branch_probabilities):
     X = probs_from_logits(X)
-    X = torch.matmul(X, branch_probabilities)
+    X = torch.einsum("nkLd,nkzd->nkLz", X, branch_probabilities)
     X = logits_from_probs(X)
     return X
 
