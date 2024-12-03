@@ -33,7 +33,7 @@ rate_matrix = np.array([[[-1, 1./3, 1./3, 1./3],
                          [1./3, 1./3, 1./3, -1]]])
 
 
-L = tensortree.model.loglik(leaves, leaf_names, tree, rate_matrix, 
+L = tensortree.model.loglik(leaves, leaf_names, tree, rate_matrix, tree.branch_lengths,
                 equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]),
                 leaves_are_probabilities=True)
 ```
