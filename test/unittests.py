@@ -128,6 +128,46 @@ class TestTree(unittest.TestCase):
         np.testing.assert_equal(t4.parent_indices, np.array([4, 4, 4, 4]))
 
 
+    def test_newick_strings(self):
+        tree_file = "test/data/simple.tree"
+        t = TreeHandler.read(tree_file)
+        self.assertEqual(t.to_newick().strip(), 
+                         "(A:0.10000,B:0.20000,(C:0.30000,D:0.40000):0.50000):0.00000;")
+        
+    
+    def test_split_node(self):
+        t = TreeHandler.read("test/data/simple.tree")
+        t.split("C", n=2, branch_length=0.1)
+        t.update()
+        np.testing.assert_equal(t.layer_sizes, np.array([5,1,1,1]))
+
+
+    def test_collapse_node(self):
+        t = TreeHandler.read("test/data/simple.tree")
+        t.collapse("C")
+        t.update()
+        np.testing.assert_equal(t.layer_sizes, np.array([3,1,1]))
+
+
+    def test_prune(self):
+        for tree_file in ["test/data/simple.tree", 
+                          "test/data/simple2.tree", 
+                          "test/data/simple3.tree",
+                          "test/data/star.tree"]:
+            t = TreeHandler.read("test/data/simple.tree")
+            height_before = t.height
+            layer_1_indices = t.get_parent_indices_by_height(0)
+            names = [t.node_names[i] for i in layer_1_indices]
+            t.prune()
+            t.update()
+            self.assertEqual(t.height, height_before-1)
+            # after pruning, the indices of the previous height layer 1 (now 0), 
+            # should be in the same order
+            for i, name in zip(layer_1_indices, names):
+                self.assertEqual(t.get_index(name), i-len(names))
+
+
+
 class TestBackend():
 
     def _test_branch_lengths(self, backend, decode=False):

@@ -2,6 +2,9 @@ from Bio import Phylo
 import numpy as np
 from tensortree.util import backend, default_dtype
 from dataclasses import dataclass
+from io import StringIO
+import uuid
+import copy
 
 
 @dataclass
@@ -20,11 +23,17 @@ height-wise processing of the tree.
 class TreeHandler():
     """
     Args:
-        tree: Bio.Phylo tree object that will we wrapped by this class.
+        tree: Bio.Phylo tree object that will we wrapped by this class. If None, an tree with only a root node will be created.
+        root_name: Name of the root node when creating a new tree.
     """
-    def __init__(self, tree : Phylo.BaseTree):
+    def __init__(self, tree : Phylo.BaseTree = None, root_name=None):
+        if tree is None:
+            tree = Phylo.BaseTree.Clade()
+            tree.name = root_name if root_name is not None else "ROOT"
         self.bio_tree = tree
-        self.update_datastructures()
+        self.collapse_queue = []
+        self.split_queue = []
+        self.update()
         self.setup_init_branch_lengths()
         # initially, get_branch_lengths will return branch lengths
         # parsed from the tree file
@@ -46,6 +55,9 @@ class TreeHandler():
     """
     def get_indices(self, node_names):
         return [self.nodes[name].index for name in node_names]
+    
+    def get_index(self, node_name):
+        return self.nodes[node_name].index
     
 
     """ Sets the branch lengths of the tree.
@@ -139,17 +151,19 @@ class TreeHandler():
 
     """ Initializes or updates utility datastructures for the tree.
     """
-    def update_datastructures(self, unnamed_node_keyword="tensortree_node"):
+    def update(self, unnamed_node_keyword="tensortree_node"):
+
+        #apply any queued modifications
+        self._apply_mods(unnamed_node_keyword)
+
         # name nodes if they are not named, make sure all nodes have a unique names
         provided_names = set()
         for idx, clade in enumerate(self.bio_tree.find_clades()):
             if clade.name:
-                assert(unnamed_node_keyword not in clade.name, 
-                    f"The keyword '{unnamed_node_keyword}' is reserved for internal use.")
-            else:
-                assert(clade.name not in provided_names, "All nodes must have unique names.")
+                assert clade.name not in provided_names, f"All nodes must have unique names. {clade.name} is not unique."
                 provided_names.add(clade.name)
-                clade.name = unnamed_node_keyword+'_'+str(idx)
+            else:
+                clade.name = unnamed_node_keyword+'_'+uuid.uuid4().hex
 
         # create a node-to-parent map
         self.nodes = {self.bio_tree.root.name: NodeData(self.bio_tree.root, parent=None)}
@@ -191,9 +205,11 @@ class TreeHandler():
         for clade in self.bio_tree.find_clades(order="postorder"):
             index_struct[self.nodes[clade.name].height].append(clade)
         i = 0
+        self.node_names = []
         for node_list in index_struct:
             for node in node_list:
                 self.nodes[node.name].index = i
+                self.node_names.append(node.name)
                 i += 1
 
         # compute the number of leaf/internal children for each node as well as parent indices
@@ -216,3 +232,62 @@ class TreeHandler():
         for clade in self.bio_tree.find_clades(order="level"):
             for child in clade:
                 self.init_branch_lengths[self.nodes[child.name].index] = self.bio_tree.distance(clade, child)
+
+
+    """ Collapses a node in the tree. Call update() after all tree modifications are done.
+    """
+    def collapse(self, node_name):
+        self.collapse_queue.append(self.nodes[node_name].node)
+
+
+    """ Generates n new descendants for a node. Call update() after all tree modifications are done.
+    """
+    def split(self, node_name, n=2, branch_length=1.0, names=None):
+        node = self.nodes[node_name].node
+        self.split_queue.append((node, n, branch_length, names))
+
+
+    """ Prunes the tree by removing all leaves, i.e. strips the lowest height layer.
+        Call update() after all tree modifications are done.   
+    """
+    def prune(self):
+        for node in self.bio_tree.get_terminals():
+            self.collapse(node.name)
+
+    
+    # applies queued modifications to the tree before update
+    def _apply_mods(self, unnamed_node_keyword="tensortree_node"):
+        # collapse
+        for node in self.collapse_queue:
+            self.bio_tree.collapse(node)
+        self.collapse_queue.clear()
+        # split
+        for node, n, branch_length, names in self.split_queue:
+            node.split(n, branch_length)
+            if names is not None:
+                for child, name in zip(node, names):
+                    child.name = name
+        self.split_queue.clear()
+                
+
+
+
+
+    """ Returns the newick string representation of the tree.
+    """
+    def to_newick(self, no_internal_names=True):
+        if no_internal_names:
+            #remove internal names
+            internal_names = []
+            for clade in self.bio_tree.find_clades():
+                if not clade.is_terminal():
+                    internal_names.append(clade.name)
+                    clade.name = None
+        handle = StringIO()
+        Phylo.write(self.bio_tree, handle, "newick")
+        if no_internal_names:
+            #reset the names
+            for name in internal_names:
+                clade = self.nodes[name].node
+                clade.name = name
+        return handle.getvalue()
