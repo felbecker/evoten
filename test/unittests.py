@@ -484,3 +484,46 @@ class TestGradientPytorch(TestGradientTF):
         self.assertTrue(not np.any(np.isnan(dL_dB.detach().numpy())))
         self.assertTrue(not np.any(np.isnan(dL_dQ.detach().numpy())))
         self.assertTrue(not np.any(np.isnan(dL_dX.detach().numpy())))
+
+
+
+class TestSubstitutionModels(unittest.TestCase):
+
+    def test_LG(self):
+        R, pi = substitution_models.LG()
+        self.assertEqual(R.shape, (20, 20))
+        self.assertEqual(pi.shape, (20,))
+
+        exchange_A_R = 0.425093
+        exchange_D_N = 5.076149
+        exchange_V_Y = 0.249313
+        equi_A = 0.079066
+        equi_D = 0.053052
+
+        np.testing.assert_almost_equal(R[0,1], exchange_A_R)
+        np.testing.assert_almost_equal(R[1,0], exchange_A_R)
+        np.testing.assert_almost_equal(R[3,2], exchange_D_N)
+        np.testing.assert_almost_equal(R[2,3], exchange_D_N)
+        np.testing.assert_almost_equal(R[18,19], exchange_V_Y)
+        np.testing.assert_almost_equal(R[19,18], exchange_V_Y)
+        np.testing.assert_almost_equal(pi[0], equi_A)
+        np.testing.assert_almost_equal(pi[3], equi_D)
+
+        # test if different amino acids orders are correctly handled
+        alternative_alphabet = "ACDEFGHIKLMNPQRSTVWY"
+        R, pi = substitution_models.LG(alphabet=alternative_alphabet)
+        a = alternative_alphabet.index("A")
+        r = alternative_alphabet.index("R")
+        d = alternative_alphabet.index("D")
+        n = alternative_alphabet.index("N")
+        v = alternative_alphabet.index("V")
+        y = alternative_alphabet.index("Y")
+
+        np.testing.assert_almost_equal(R[a,r], exchange_A_R)
+        np.testing.assert_almost_equal(R[r,a], exchange_A_R)
+        np.testing.assert_almost_equal(R[d,n], exchange_D_N)
+        np.testing.assert_almost_equal(R[n,d], exchange_D_N)
+        np.testing.assert_almost_equal(R[v,y], exchange_V_Y)
+        np.testing.assert_almost_equal(R[y,v], exchange_V_Y)
+        np.testing.assert_almost_equal(pi[a], equi_A)
+        np.testing.assert_almost_equal(pi[d], equi_D)
