@@ -13,7 +13,7 @@ Args:
     X: Log-likelihoods of shape (n, models, L, d)
     branch_lengths: Branch lengths of shape (n, models)
     rate_matrix: Rate matrix of shape (models, d, d)
-    transposed: If True, a transposed transition matrix (X is present, T is future) will be used. 
+    transposed: If True, a transposed transition matrix (X is past, T is present) will be used. 
                 Per default, the transition matrix is not transposed, i.e. X is present and T is past.
                 When transposed=True, T will be (log-)probabilities, given X are also (log-)probabilities.
 """
