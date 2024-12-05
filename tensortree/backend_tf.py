@@ -77,14 +77,18 @@ Args:
 Returns:
     logits of shape (n, k, L, d)
 """
-def traverse_branch(X, branch_probabilities, transposed=False):
+def traverse_branch(X, branch_probabilities, transposed=False, logarithmic=True):
 
     if True:
         #fast matmul version, but requires conversion, might be numerically unstable
-        X = probs_from_logits(X)
+        if logarithmic:
+            X = probs_from_logits(X)
         X = tf.matmul(X, branch_probabilities, transpose_b=not transposed)
-        X = logits_from_probs(X)
+        if logarithmic:
+            X = logits_from_probs(X)
     else:
+        if not logarithmic:
+            raise ValueError("Non-logarithmic traversal is not supported.")
         # slower (no matmul) but more stable? 
         X = tf.math.reduce_logsumexp(X[..., tf.newaxis, :] + tf.math.log(branch_probabilities[:,:,tf.newaxis]), axis=-1)
     return X

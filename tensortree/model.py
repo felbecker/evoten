@@ -17,9 +17,9 @@ Args:
                 Per default, the transition matrix is not transposed, i.e. X is present and T is past.
                 When transposed=True, T will be (log-)probabilities, given X are also (log-)probabilities.
 """
-def traverse_branches(X, rate_matrix, branch_lengths, transposed=False):
+def traverse_branches(X, rate_matrix, branch_lengths, transposed=False, logarithmic=True):
     P = backend.make_transition_probs(rate_matrix, branch_lengths)
-    T = backend.traverse_branch(X, P, transposed)
+    T = backend.traverse_branch(X, P, transposed, logarithmic=logarithmic)
     return T
 
 

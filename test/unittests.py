@@ -167,7 +167,6 @@ class TestTree(unittest.TestCase):
                 self.assertEqual(t.get_index(name), i-len(names))
 
 
-
 class TestBackend():
 
     def _test_branch_lengths(self, backend, decode=False):
@@ -176,6 +175,12 @@ class TestBackend():
         if decode:
             branch_lengths = branch_lengths.numpy()
         self.assertTrue(np.all(branch_lengths > 0.))
+
+
+    def _test_exchangeability_matrix(self):
+        kernel = np.array([[[0., 1., 2.], [1., 0., 3.], [2., 3., 0.]]])
+        R = backend.make_symmetric_pos_semidefinite(kernel)
+        _check_symmetry_and_zero_diagonal(self, R[0])
 
 
     def _test_rate_matrix(self, backend, decode=False):
@@ -187,6 +192,15 @@ class TestBackend():
             rate_matrix = rate_matrix.numpy()
         ref = np.array([[[-1., .5, .5], [.5, -1, .5], [.5, .5, -1]]]*3)
         np.testing.assert_allclose(rate_matrix, ref)
+
+
+    def _test_LG_rate_matrix(self, backend):
+        R, p = substitution_models.LG()
+        Q = backend.make_rate_matrix(R[None], p[None])
+        for i in range(20):
+            for j in range(20):
+                np.testing.assert_almost_equal(Q[0,i,j] * p[i], 
+                                               Q[0,j,i] * p[j])
 
 
     def _test_transition_probs(self, backend, decode=False):
@@ -214,6 +228,10 @@ class TestBackendTF(unittest.TestCase, TestBackend):
     def test_rate_matrix(self):
         import tensortree.backend_tf as backend_tf
         self._test_rate_matrix(backend_tf)
+
+    def test_LG_rate_matrix(self):
+        import tensortree.backend_tf as backend_tf
+        self._test_LG_rate_matrix(backend_tf)
     
     def test_transition_probs(self):
         import tensortree.backend_tf as backend_tf
@@ -229,6 +247,10 @@ class TestBackendPytorch(unittest.TestCase, TestBackend):
     def test_rate_matrix(self):
         import tensortree.backend_pytorch as backend_pytorch
         self._test_rate_matrix(backend_pytorch, decode=True)
+
+    def test_LG_rate_matrix(self):
+        import tensortree.backend_pytorch as backend_pytorch
+        self._test_LG_rate_matrix(backend_pytorch)
     
     def test_transition_probs(self):
         import tensortree.backend_pytorch as backend_pytorch
@@ -527,3 +549,18 @@ class TestSubstitutionModels(unittest.TestCase):
         np.testing.assert_almost_equal(R[y,v], exchange_V_Y)
         np.testing.assert_almost_equal(pi[a], equi_A)
         np.testing.assert_almost_equal(pi[d], equi_D)
+
+        _check_symmetry_and_zero_diagonal(self, R)
+        _check_if_sums_to_one(self, pi)
+
+
+
+
+
+# utility functions
+def _check_symmetry_and_zero_diagonal(test_case : unittest.TestCase, matrix):
+    np.testing.assert_almost_equal(matrix, np.transpose(matrix))
+    np.testing.assert_almost_equal(np.diag(matrix), 0.)
+
+def _check_if_sums_to_one(test_case : unittest.TestCase, matrix):
+    np.testing.assert_almost_equal(np.sum(matrix, -1), 1., decimal=6)

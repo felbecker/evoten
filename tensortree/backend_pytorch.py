@@ -89,13 +89,15 @@ Args:
 Returns:
     logits of shape (n, k, L, d)
 """
-def traverse_branch(X, branch_probabilities, transposed=False):
-    X = probs_from_logits(X)
+def traverse_branch(X, branch_probabilities, transposed=False, logarithmic=True):
+    if logarithmic:
+        X = probs_from_logits(X)
     if transposed:
         X = torch.einsum("nkLd,nkdz->nkLz", X, branch_probabilities)
     else:
         X = torch.einsum("nkLd,nkzd->nkLz", X, branch_probabilities)
-    X = logits_from_probs(X)
+    if logarithmic:
+        X = logits_from_probs(X)
     return X
 
 
