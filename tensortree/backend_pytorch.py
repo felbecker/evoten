@@ -85,12 +85,16 @@ Computes the probabilities after traversing a branch when starting with distribu
 Args:
     X: tensor with logits of shape (n, k, L, d). 
     branch_probabilities: tensor of shape (n, k, d, d). 
+    transposed: If True, a transposed transition matrix (X is present, T is future) will be used.
 Returns:
     logits of shape (n, k, L, d)
 """
-def traverse_branch(X, branch_probabilities):
+def traverse_branch(X, branch_probabilities, transposed=False):
     X = probs_from_logits(X)
-    X = torch.einsum("nkLd,nkzd->nkLz", X, branch_probabilities)
+    if transposed:
+        X = torch.einsum("nkLd,nkdz->nkLz", X, branch_probabilities)
+    else:
+        X = torch.einsum("nkLd,nkzd->nkLz", X, branch_probabilities)
     X = logits_from_probs(X)
     return X
 
