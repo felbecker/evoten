@@ -29,8 +29,7 @@ def jukes_cantor(mue=4./3, d=4, dtype=util.default_dtype):
 Args:
     alphabet: A string with the amino acids in the desired order.   
 Returns:
-    symmetric k x d x d  tensor of exchangeabilities and k x d matrix of equilibrium frequencies.
-    k is the length of mue or 1 if mue is a scalar.
+    symmetric d x d  tensor of exchangeabilities and d matrix of equilibrium frequencies.
 """
 def LG(alphabet="ARNDCQEGHILKMFPSTWYV", dtype=util.default_dtype):
     return parse_paml(LG_paml, alphabet)

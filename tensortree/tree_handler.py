@@ -33,12 +33,7 @@ class TreeHandler():
         self.bio_tree = tree
         self.collapse_queue = []
         self.split_queue = []
-        self.update()
-        self.setup_init_branch_lengths()
-        # initially, get_branch_lengths will return branch lengths
-        # parsed from the tree file
-        # calling set_branch_lengths later will overwrite these values
-        self.set_branch_lengths(self.init_branch_lengths)
+        self.update(force_reset_init_lengths=True)
 
 
     """ Reads a tree from a file. 
@@ -151,10 +146,10 @@ class TreeHandler():
 
     """ Initializes or updates utility datastructures for the tree.
     """
-    def update(self, unnamed_node_keyword="tensortree_node"):
+    def update(self, unnamed_node_keyword="tensortree_node", force_reset_init_lengths=False):
 
         #apply any queued modifications
-        self._apply_mods(unnamed_node_keyword)
+        mods_applied = self._apply_mods(unnamed_node_keyword)
 
         # name nodes if they are not named, make sure all nodes have a unique names
         provided_names = set()
@@ -224,6 +219,13 @@ class TreeHandler():
             if clade != self.bio_tree.root:
                 self.parent_indices[self.nodes[clade.name].index] = self.nodes[self.nodes[clade.name].parent.name].index
 
+        if mods_applied or force_reset_init_lengths:
+            self.setup_init_branch_lengths()
+            # initially, get_branch_lengths will return branch lengths
+            # parsed from the tree file
+            # calling set_branch_lengths later will overwrite these values
+            self.set_branch_lengths(self.init_branch_lengths)
+
 
     """ Initializes the branch lengths of the tree.
     """
@@ -257,6 +259,7 @@ class TreeHandler():
     
     # applies queued modifications to the tree before update
     def _apply_mods(self, unnamed_node_keyword="tensortree_node"):
+        mods_applied = len(self.collapse_queue) > 0 or len(self.split_queue) > 0
         # collapse
         for node in self.collapse_queue:
             self.bio_tree.collapse(node)
@@ -268,8 +271,8 @@ class TreeHandler():
                 for child, name in zip(node, names):
                     child.name = name
         self.split_queue.clear()
+        return mods_applied
                 
-
 
 
 

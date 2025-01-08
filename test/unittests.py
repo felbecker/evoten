@@ -147,6 +147,7 @@ class TestTree(unittest.TestCase):
         t.collapse("C")
         t.update()
         np.testing.assert_equal(t.layer_sizes, np.array([3,1,1]))
+        np.testing.assert_equal(t.branch_lengths[:,0], np.array([.1, .2, .4, .5], dtype=util.default_dtype))
 
 
     def test_prune(self):
@@ -295,7 +296,7 @@ class TestModelTF(unittest.TestCase):
         leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
 
         # test if the ancestral probabilities are computed correctly
-        X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, t.branch_lengths,
+        X = model.compute_ancestral_probabilities(leaves, t, rate_matrix, t.branch_lengths, leaf_names,
                                                     leaves_are_probabilities=True,
                                                     return_probabilities=True)
         np.testing.assert_almost_equal(X[-1,0], refs)
@@ -303,8 +304,9 @@ class TestModelTF(unittest.TestCase):
 
     def test_likelihood_star(self):
         leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
-        L = model.loglik(leaves, leaf_names, t, rate_matrix, t.branch_lengths,
+        L = model.loglik(leaves, t, rate_matrix, t.branch_lengths, 
                         equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]).astype(util.default_dtype),
+                        leaf_names=leaf_names,
                         leaves_are_probabilities=True)
         self.assertEqual(L.shape, (1,3))
         np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4))
@@ -315,7 +317,7 @@ class TestModelTF(unittest.TestCase):
         permuation = [2,1,0,3]
         leaves = leaves[permuation]
         leaf_names = [leaf_names[i] for i in permuation]
-        X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, t.branch_lengths,
+        X = model.compute_ancestral_probabilities(leaves, t, rate_matrix, t.branch_lengths, leaf_names,
                                                     leaves_are_probabilities=True,
                                                     return_probabilities=True)
         np.testing.assert_almost_equal(X[-1,0], refs)
@@ -377,7 +379,7 @@ class TestModelTF(unittest.TestCase):
     def test_anc_probs_simple3(self):
         leaves, leaf_names, t, rate_matrix, refs = self.get_simple3_inputs_refs()
         # test if the ancestral probabilities are computed correctly
-        X = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrix, t.branch_lengths,
+        X = model.compute_ancestral_probabilities(leaves, t, rate_matrix, t.branch_lengths, leaf_names,
                                                     leaves_are_probabilities=True, return_probabilities=True)
         self.assertEqual(X.shape, (5,1,5,4))  
         np.testing.assert_almost_equal(X[-1,0], refs)
@@ -401,17 +403,17 @@ class TestModelTF(unittest.TestCase):
         t.set_branch_lengths(branch_lengths_full)
         leaves_full = np.concatenate([leaves]*3, axis=1)
 
-        X_no_broadcast = model.compute_ancestral_probabilities(leaves_full, leaf_names, t, rate_matrices_full, t.branch_lengths,
+        X_no_broadcast = model.compute_ancestral_probabilities(leaves_full, t, rate_matrices_full, t.branch_lengths, leaf_names,
                                                                leaves_are_probabilities=True, return_probabilities=True)
         np.testing.assert_almost_equal(X_no_broadcast[-1], refs_full)
 
         # 2. broadcasting for leaves
-        X_broadcast_leaves = model.compute_ancestral_probabilities(leaves, leaf_names, t, rate_matrices_full, t.branch_lengths, 
+        X_broadcast_leaves = model.compute_ancestral_probabilities(leaves, t, rate_matrices_full, t.branch_lengths, leaf_names, 
                                                                     leaves_are_probabilities=True, return_probabilities=True)
         np.testing.assert_almost_equal(X_broadcast_leaves[-1], refs_full)
 
         # 3. broadcasting for rates
-        X_broadcast_rates = model.compute_ancestral_probabilities(leaves_full, leaf_names, t, rate_matrix,  t.branch_lengths,
+        X_broadcast_rates = model.compute_ancestral_probabilities(leaves_full, t, rate_matrix,  t.branch_lengths, leaf_names,
                                                                  leaves_are_probabilities=True, return_probabilities=True)
         np.testing.assert_almost_equal(X_broadcast_rates[-1], np.stack([refs]*3))
 
@@ -458,8 +460,9 @@ class TestGradientTF(unittest.TestCase):
         # compute the likelihood and test if it can be differentiated
         # w.r.t. to the leaves, branch lengths and rate matrix
         with tf.GradientTape(persistent=True) as tape:
-            L = model.loglik(X, leaf_names, t, Q, t.branch_lengths,
+            L = model.loglik(X, t, Q, t.branch_lengths,
                             equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]),
+                            leaf_names=leaf_names,
                             leaves_are_probabilities=True)
             
         # currently, we only test if the gradient can be computed without errors
@@ -490,8 +493,9 @@ class TestGradientPytorch(TestGradientTF):
 
         # compute the likelihood and test if it can be differentiated
         # w.r.t. to the leaves, branch lengths and rate matrix
-        L = model.loglik(X, leaf_names, t, Q, t.branch_lengths,
+        L = model.loglik(X, t, Q, t.branch_lengths,
                         equilibrium_logits=torch.log(torch.tensor([[1./4, 1./4, 1./4, 1./4]])),
+                        leaf_names=leaf_names,
                         leaves_are_probabilities=True)
         
         # sum up, in pytorch grad can be implicitly created only for scalar outputs

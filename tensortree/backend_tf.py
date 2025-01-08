@@ -144,5 +144,5 @@ def concat(tensors, axis=0):
 
 """Initializes the ancestral logits tensor with zeros."""
 def get_ancestral_logits_init_tensor(leaves, models, num_ancestral):
-    _, L, _, d = tf.unstack(tf.shape(leaves), 4)
+    _, _, L, d = tf.unstack(tf.shape(leaves), 4)
     return tf.zeros((num_ancestral, models, L, d), dtype=leaves.dtype)

@@ -31,10 +31,10 @@ Uses a vectorized implementation of Felsenstein's pruning algorithm
 that treats models, sequence positions and all nodes within a tree layer in parallel.
 Args:
     leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d). 
-    leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
     tree_handler: TreeHandler object
     rate_matrix: Rate matrix of shape (models, d, d)
     branch_lengths: Branch lengths of shape (num_nodes-1, models)
+    leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
     return_only_root: If True, only the root node logits are returned.
     leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
     return_probabilities: If True, return probabilities instead of logits.
@@ -42,9 +42,13 @@ Returns:
     Ancestral logits of shape (models, L, d) if return_only_root 
     else shape (num_ancestral_nodes, models, L, d)
 """
-def compute_ancestral_probabilities(leaves, leaf_names,
-                                    tree_handler : TreeHandler, rate_matrix, branch_lengths, 
-                                    return_only_root = False, leaves_are_probabilities = False,
+def compute_ancestral_probabilities(leaves,
+                                    tree_handler : TreeHandler, 
+                                    rate_matrix, 
+                                    branch_lengths, 
+                                    leaf_names=None,
+                                    return_only_root = False, 
+                                    leaves_are_probabilities = True,
                                     return_probabilities = False):
     
     if leaves_are_probabilities:
@@ -55,7 +59,10 @@ def compute_ancestral_probabilities(leaves, leaf_names,
     anc_logliks = backend.get_ancestral_logits_init_tensor(leaves, tree_handler.num_models, tree_handler.num_anc)
 
     # reorder the leaves to match the tree handler's internal order
-    X = tree_handler.reorder(leaves, leaf_names)
+    if leaf_names is None:
+        X = leaves
+    else:
+        X = tree_handler.reorder(leaves, leaf_names)
     
     for height in range(tree_handler.height):
         
@@ -84,13 +91,19 @@ Args:
     rate_matrix: Rate matrix of shape (models, d, d)
     branch_lengths: Branch lengths of shape (num_nodes-1, models)
     equilibrium_logits: Equilibrium distribution logits of shape (models, d).
+    leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
     leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
 Returns:
     Log-likelihoods of shape (models, L).
 """
-def loglik(leaves, leaf_names, tree_handler : TreeHandler, rate_matrix, branch_lengths, equilibrium_logits, 
-           leaves_are_probabilities=False):
-    root_logits = compute_ancestral_probabilities(leaves, leaf_names, tree_handler, rate_matrix, branch_lengths,
+def loglik(leaves, 
+           tree_handler : TreeHandler, 
+           rate_matrix, 
+           branch_lengths, 
+           equilibrium_logits, 
+           leaf_names=None,
+           leaves_are_probabilities=True):
+    root_logits = compute_ancestral_probabilities(leaves, tree_handler, rate_matrix, branch_lengths, leaf_names,
                                                   return_only_root = True, leaves_are_probabilities=leaves_are_probabilities, 
                                                   return_probabilities=False)
     return backend.loglik_from_root_logits(root_logits, equilibrium_logits)
