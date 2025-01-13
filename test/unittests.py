@@ -385,6 +385,29 @@ class TestModelTF(unittest.TestCase):
         np.testing.assert_almost_equal(X[-1,0], refs)
 
 
+    def test_anc_probs_just_root(self):
+        tree = TreeHandler() # root only
+        leaves_ind = np.array([[0,1,3,3,1]])
+        leaves = np.eye(4, dtype=util.default_dtype)[leaves_ind]
+        leaves = leaves[:,np.newaxis]
+        _,_,_,rate_matrix,_ = self.get_simple3_inputs_refs()
+
+        # this should throw an assertion error as there are no internal nodes
+        catched = False
+        try:
+            X = model.compute_ancestral_probabilities(leaves, tree, rate_matrix, tree.branch_lengths,
+                                                        leaves_are_probabilities=True, return_probabilities=True)
+        except AssertionError:
+            catched = True
+        self.assertTrue(catched)
+        
+        # this should work
+        X = model.loglik(leaves, tree, rate_matrix, tree.branch_lengths, 
+                        equilibrium_logits=np.log([[1./10, 2./10, 3./10, 4./10]]))
+        refs = np.array([np.log(float(i+1)/10) for i in leaves_ind[0]])
+        np.testing.assert_almost_equal(X[0,0], refs)
+
+
     def test_multi_model_anc_probs_star(self):
         leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
 

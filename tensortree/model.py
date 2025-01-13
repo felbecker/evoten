@@ -51,6 +51,8 @@ def compute_ancestral_probabilities(leaves,
                                     leaves_are_probabilities = True,
                                     return_probabilities = False):
     
+    assert tree_handler.height > 0, "Tree must have at least one internal node."
+    
     if leaves_are_probabilities:
         leaves = backend.logits_from_probs(leaves)
 
@@ -103,7 +105,14 @@ def loglik(leaves,
            equilibrium_logits, 
            leaf_names=None,
            leaves_are_probabilities=True):
-    root_logits = compute_ancestral_probabilities(leaves, tree_handler, rate_matrix, branch_lengths, leaf_names,
-                                                  return_only_root = True, leaves_are_probabilities=leaves_are_probabilities, 
-                                                  return_probabilities=False)
-    return backend.loglik_from_root_logits(root_logits, equilibrium_logits)
+    print(tree_handler.height)
+    # handle the edge case where the input tree consists of a single node
+    if tree_handler.height == 0:
+        if leaves_are_probabilities:
+            leaves = backend.logits_from_probs(leaves)
+        return backend.loglik_from_root_logits(leaves, equilibrium_logits)
+    else:
+        root_logits = compute_ancestral_probabilities(leaves, tree_handler, rate_matrix, branch_lengths, leaf_names,
+                                                    return_only_root = True, leaves_are_probabilities=leaves_are_probabilities, 
+                                                    return_probabilities=False)
+        return backend.loglik_from_root_logits(root_logits, equilibrium_logits)
