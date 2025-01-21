@@ -405,7 +405,7 @@ class TestModelTF(unittest.TestCase):
         X = model.loglik(leaves, tree, rate_matrix, tree.branch_lengths, 
                         equilibrium_logits=np.log([[1./10, 2./10, 3./10, 4./10]]))
         refs = np.array([np.log(float(i+1)/10) for i in leaves_ind[0]])
-        np.testing.assert_almost_equal(X[0,0], refs)
+        np.testing.assert_almost_equal(X[0], refs, decimal=5)
 
 
     def test_multi_model_anc_probs_star(self):

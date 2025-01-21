@@ -6,27 +6,26 @@ import numpy as np
 
 
 """
-Traverse n independent branches {u, parent(u)} in parallel, i.e. compute the log-likelihoods 
-of all symbols at parent(u) given the log-likelihoods at u.
-Does not aggregate.
+Traverse n branches (u, inputs) in parallel and compute P(inputs | u).
+Per default, we assume that u is further in the past than inputs and that the branch_length > 0 between them
+indicates evolutionary time.
 Args:
-    X: Log-likelihoods of shape (n, models, L, d)
+    inputs: Log-likelihoods of shape (n, models, L, d)
     branch_lengths: Branch lengths of shape (n, models)
     rate_matrix: Rate matrix of shape (models, d, d)
-    transposed: If True, a transposed transition matrix (X is past, T is present) will be used. 
-                Per default, the transition matrix is not transposed, i.e. X is present and T is past.
-                When transposed=True, T will be (log-)probabilities, given X are also (log-)probabilities.
+    transposed: If transposed=False, compute P(v | u) (default).
+                If transposed=True, compute P(u | v).
 """
-def traverse_branches(X, rate_matrix, branch_lengths, transposed=False, logarithmic=True):
+def traverse_branches(inputs, rate_matrix, branch_lengths, transposed=False, logarithmic=True):
     P = backend.make_transition_probs(rate_matrix, branch_lengths)
-    T = backend.traverse_branch(X, P, transposed, logarithmic=logarithmic)
+    T = backend.traverse_branch(inputs, P, transposed, logarithmic=logarithmic)
     return T
 
 
 """
-Computes the partial log-likelihoods at all internal (ancestral) nodes in the tree 
-given logits at the leaves and a tree topology.
-Supports multiple models with broadcasting for rates and leaves in the model dimension.
+Computes all (partial) log-likelihoods at all internal (ancestral) nodes u in the given tree,
+that is P(leaves below u | u, tree) for all u that are not leaves.
+Supports multiple, parallel models with broadcasting for rates and leaves in the model dimension.
 Uses a vectorized implementation of Felsenstein's pruning algorithm
 that treats models, sequence positions and all nodes within a tree layer in parallel.
 Args:
@@ -35,11 +34,11 @@ Args:
     rate_matrix: Rate matrix of shape (models, d, d)
     branch_lengths: Branch lengths of shape (num_nodes-1, models)
     leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
-    return_only_root: If True, only the root node logits are returned.
+    return_only_root: If True, only the root node logliks are returned.
     leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
-    return_probabilities: If True, return probabilities instead of logits.
+    return_probabilities: If True, return probabilities instead of logliks.
 Returns:
-    Ancestral logits of shape (models, L, d) if return_only_root 
+    Ancestral logliks of shape (models, L, d) if return_only_root 
     else shape (num_ancestral_nodes, models, L, d)
 """
 def compute_ancestral_probabilities(leaves,
@@ -105,11 +104,10 @@ def loglik(leaves,
            equilibrium_logits, 
            leaf_names=None,
            leaves_are_probabilities=True):
-    print(tree_handler.height)
     # handle the edge case where the input tree consists of a single node
     if tree_handler.height == 0:
         if leaves_are_probabilities:
-            leaves = backend.logits_from_probs(leaves)
+            leaves = backend.logits_from_probs(leaves)[0,:]
         return backend.loglik_from_root_logits(leaves, equilibrium_logits)
     else:
         root_logits = compute_ancestral_probabilities(leaves, tree_handler, rate_matrix, branch_lengths, leaf_names,

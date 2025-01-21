@@ -30,6 +30,7 @@ class TreeHandler():
         if tree is None:
             tree = Phylo.BaseTree.Clade()
             tree.name = root_name if root_name is not None else "ROOT"
+        self.root_name = tree.name
         self.bio_tree = tree
         self.collapse_queue = []
         self.split_queue = []
@@ -45,12 +46,38 @@ class TreeHandler():
     def read(cls, file, fmt="newick"):
         bio_tree = Phylo.read(file, fmt)
         return cls(bio_tree)
+
+
+    """ Reads a tree from a newick string.
+    Args:
+        filename: handle or filepath
+        fmt: Format of the tree file. Supports all formats supported by Bio.Phylo.
+    """
+    @classmethod
+    def from_newick(cls, newick_str):
+        handle = StringIO(newick_str)
+        bio_tree = Phylo.read(handle, "newick")
+        return cls(bio_tree)
     
+
+    """ Copies another tree handler.
+    Args:
+        tree_handler: TreeHandler object to copy.
+    """
+    @classmethod
+    def copy(cls, tree_handler):
+        treedata = tree_handler.to_newick()
+        handle = StringIO(treedata)
+        tree = Phylo.read(handle, "newick")
+        return cls(tree, tree_handler.root_name)
+    
+
     """ Get indices for a list of node names (strings).
     """
     def get_indices(self, node_names):
         return [self.nodes[name].index for name in node_names]
     
+
     def get_index(self, node_name):
         return self.nodes[node_name].index
     
@@ -294,3 +321,9 @@ class TreeHandler():
                 clade = self.nodes[name].node
                 clade.name = name
         return handle.getvalue()
+    
+
+    """ Plots the tree. """
+    def draw(self, axes=None):
+        self.bio_tree.ladderize()  # Flip branches so deeper clades are displayed at top
+        Phylo.draw(self.bio_tree, axes=axes)
