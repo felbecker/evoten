@@ -11,7 +11,7 @@ from tensortree import model, util, tree_handler, substitution_models
 class TestTree(unittest.TestCase):
     
     def setUp(self):
-        util.set_backend("tensorflow_uncompiled")  
+        util.set_backend("tensorflow")  
 
     def test_indices(self):
         # tensortree sorts nodes by height and left to right within a layer
@@ -223,46 +223,46 @@ class TestBackend():
 class TestBackendTF(unittest.TestCase, TestBackend):
 
     def test_branch_lengths(self):
-        import tensortree.backend_tf as backend_tf
-        self._test_branch_lengths(backend_tf)
+        from tensortree.backend_tf import BackendTF
+        self._test_branch_lengths(BackendTF())
 
     def test_rate_matrix(self):
-        import tensortree.backend_tf as backend_tf
-        self._test_rate_matrix(backend_tf)
+        from tensortree.backend_tf import BackendTF
+        self._test_rate_matrix(BackendTF())
 
     def test_LG_rate_matrix(self):
-        import tensortree.backend_tf as backend_tf
-        self._test_LG_rate_matrix(backend_tf)
+        from tensortree.backend_tf import BackendTF
+        self._test_LG_rate_matrix(BackendTF())
     
     def test_transition_probs(self):
-        import tensortree.backend_tf as backend_tf
-        self._test_transition_probs(backend_tf)
+        from tensortree.backend_tf import BackendTF
+        self._test_transition_probs(BackendTF())
     
 
 class TestBackendPytorch(unittest.TestCase, TestBackend):
 
     def test_branch_lengths(self):
-        import tensortree.backend_pytorch as backend_pytorch
-        self._test_branch_lengths(backend_pytorch, decode=True)
+        from tensortree.backend_pytorch import BackendTorch
+        self._test_branch_lengths(BackendTorch(), decode=True)
 
     def test_rate_matrix(self):
-        import tensortree.backend_pytorch as backend_pytorch
-        self._test_rate_matrix(backend_pytorch, decode=True)
+        from tensortree.backend_pytorch import BackendTorch
+        self._test_rate_matrix(BackendTorch(), decode=True)
 
     def test_LG_rate_matrix(self):
-        import tensortree.backend_pytorch as backend_pytorch
-        self._test_LG_rate_matrix(backend_pytorch)
-    
+        from tensortree.backend_pytorch import BackendTorch
+        self._test_LG_rate_matrix(BackendTorch())
+
     def test_transition_probs(self):
-        import tensortree.backend_pytorch as backend_pytorch
-        self._test_transition_probs(backend_pytorch, decode=True)
+        from tensortree.backend_pytorch import BackendTorch
+        self._test_transition_probs(BackendTorch(), decode=True)
 
 
 
 class TestModelTF(unittest.TestCase):
 
     def setUp(self):
-        util.set_backend("tensorflow_uncompiled")
+        util.set_backend("tensorflow")
     
     # computes the correct likelihood of a star-shaped tree when
     # a Jukes-Cantor model is used and
@@ -451,7 +451,7 @@ class TestModelPytorch(TestModelTF):
 class TestGradientTF(unittest.TestCase):
 
     def setUp(self):
-        util.set_backend("tensorflow_uncompiled")
+        util.set_backend("tensorflow")
 
 
     def get_star_inputs(self):

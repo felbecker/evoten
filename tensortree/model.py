@@ -5,42 +5,23 @@ import numpy as np
 
 
 
-"""
-Traverse n branches (u, inputs) in parallel and compute P(inputs | u).
-Per default, we assume that u is further in the past than inputs and that the branch_length > 0 between them
-indicates evolutionary time.
-Args:
-    inputs: Log-likelihoods of shape (n, models, L, d)
-    branch_lengths: Branch lengths of shape (n, models)
-    rate_matrix: Rate matrix of shape (models, d, d)
-    transposed: If transposed=False, compute P(v | u) (default).
-                If transposed=True, compute P(u | v).
-"""
 def traverse_branches(inputs, rate_matrix, branch_lengths, transposed=False, logarithmic=True):
+    """
+    Traverse n branches (u, inputs) in parallel and compute P(inputs | u).
+    Per default, we assume that u is further in the past than inputs and that the branch_length > 0 between them
+    indicates evolutionary time.
+
+    Args:
+        inputs: Log-likelihoods of shape (n, models, L, d)
+        branch_lengths: Branch lengths of shape (n, models)
+        rate_matrix: Rate matrix of shape (models, d, d)
+        transposed: If transposed=False, compute P(v | u) (default).
+                    If transposed=True, compute P(u | v).
+    """
     P = backend.make_transition_probs(rate_matrix, branch_lengths)
-    T = backend.traverse_branch(inputs, P, transposed, logarithmic=logarithmic)
-    return T
+    U = backend.traverse_branch(inputs, P, transposed, logarithmic=logarithmic)
+    return U
 
-
-"""
-Computes all (partial) log-likelihoods at all internal (ancestral) nodes u in the given tree,
-that is P(leaves below u | u, tree) for all u that are not leaves.
-Supports multiple, parallel models with broadcasting for rates and leaves in the model dimension.
-Uses a vectorized implementation of Felsenstein's pruning algorithm
-that treats models, sequence positions and all nodes within a tree layer in parallel.
-Args:
-    leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d). 
-    tree_handler: TreeHandler object
-    rate_matrix: Rate matrix of shape (models, d, d)
-    branch_lengths: Branch lengths of shape (num_nodes-1, models)
-    leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
-    return_only_root: If True, only the root node logliks are returned.
-    leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
-    return_probabilities: If True, return probabilities instead of logliks.
-Returns:
-    Ancestral logliks of shape (models, L, d) if return_only_root 
-    else shape (num_ancestral_nodes, models, L, d)
-"""
 def compute_ancestral_probabilities(leaves,
                                     tree_handler : TreeHandler, 
                                     rate_matrix, 
@@ -49,7 +30,28 @@ def compute_ancestral_probabilities(leaves,
                                     return_only_root = False, 
                                     leaves_are_probabilities = True,
                                     return_probabilities = False):
-    
+    """
+    Computes all (partial) log-likelihoods at all internal (ancestral) nodes u in the given tree,
+    that is P(leaves below u | u, tree) for all u that are not leaves.
+    Supports multiple, parallel models with broadcasting for rates and leaves in the model dimension.
+    Uses a vectorized implementation of Felsenstein's pruning algorithm
+    that treats models, sequence positions and all nodes within a tree layer in parallel.
+
+    Args:
+        leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d). 
+        tree_handler: TreeHandler object
+        rate_matrix: Rate matrix of shape (models, d, d)
+        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
+        return_only_root: If True, only the root node logliks are returned.
+        leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
+        return_probabilities: If True, return probabilities instead of logliks.
+
+    Returns:
+        Ancestral logliks of shape (models, L, d) if return_only_root 
+        else shape (num_ancestral_nodes, models, L, d)
+    """
+
     assert tree_handler.height > 0, "Tree must have at least one internal node."
     
     if leaves_are_probabilities:
@@ -57,7 +59,7 @@ def compute_ancestral_probabilities(leaves,
 
     # allocate a single chunk of memory for all internal nodes (no concat or masking required)
     # add results as layers are processed
-    anc_logliks = backend.get_ancestral_logits_init_tensor(leaves, tree_handler.num_models, tree_handler.num_anc)
+    anc_logliks = backend.make_zeros(leaves, tree_handler.num_models, tree_handler.num_anc)
 
     # reorder the leaves to match the tree handler's internal order
     if leaf_names is None:
@@ -67,7 +69,7 @@ def compute_ancestral_probabilities(leaves,
     
     for height in range(tree_handler.height):
         
-        # traverse all edges {u, parent(u)} for all u of same height in parallel
+        # traverse all edges (parent(X), X) for all nodes X of same height in parallel
         B = tree_handler.get_values_by_height(branch_lengths, height)
         T = traverse_branches(X, rate_matrix, B)
 
@@ -84,19 +86,6 @@ def compute_ancestral_probabilities(leaves,
     return backend.probs_from_logits(anc_logliks) if return_probabilities else anc_logliks
 
 
-"""
-Computes log P(leaves | tree, rate_matrix).
-Args:
-    leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d).
-    tree_handler: TreeHandler object
-    rate_matrix: Rate matrix of shape (models, d, d)
-    branch_lengths: Branch lengths of shape (num_nodes-1, models)
-    equilibrium_logits: Equilibrium distribution logits of shape (models, d).
-    leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
-    leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
-Returns:
-    Log-likelihoods of shape (models, L).
-"""
 def loglik(leaves, 
            tree_handler : TreeHandler, 
            rate_matrix, 
@@ -104,6 +93,21 @@ def loglik(leaves,
            equilibrium_logits, 
            leaf_names=None,
            leaves_are_probabilities=True):
+    """
+    Computes log P(leaves | tree, rate_matrix).
+
+    Args:
+        leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d).
+        tree_handler: TreeHandler object
+        rate_matrix: Rate matrix of shape (models, d, d)
+        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        equilibrium_logits: Equilibrium distribution logits of shape (models, d).
+        leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
+        leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
+
+    Returns:
+        Log-likelihoods of shape (models, L).
+    """
     # handle the edge case where the input tree consists of a single node
     if tree_handler.height == 0:
         if leaves_are_probabilities:
@@ -114,3 +118,4 @@ def loglik(leaves,
                                                     return_only_root = True, leaves_are_probabilities=leaves_are_probabilities, 
                                                     return_probabilities=False)
         return backend.loglik_from_root_logits(root_logits, equilibrium_logits)
+    

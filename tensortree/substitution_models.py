@@ -2,14 +2,17 @@ import numpy as np
 from tensortree import util
 
 
-""" Returns the exchangeabilities and equilibrium frequencies for the Jukes-Cantor model.
-Args:
-    mue: Scalar, list or 1D array.
-Returns:
-    symmetric k x d x d  tensor of exchangeabilities and k x d matrix of equilibrium frequencies.
-    k is the length of mue or 1 if mue is a scalar.
-"""
+
 def jukes_cantor(mue=4./3, d=4, dtype=util.default_dtype):
+    """ Returns the exchangeabilities and equilibrium frequencies for the Jukes-Cantor model.
+
+    Args:
+        mue: Scalar, list or 1D array.
+
+    Returns:
+        symmetric k x d x d  tensor of exchangeabilities and k x d matrix of equilibrium frequencies.
+        k is the length of mue or 1 if mue is a scalar.
+    """
     if isinstance(mue, list):
         mue = np.array(mue, dtype=dtype)
     if np.isscalar(mue):
@@ -24,19 +27,22 @@ def jukes_cantor(mue=4./3, d=4, dtype=util.default_dtype):
 
 
 
-""" Returns the exchangeabilities and equilibrium frequencies for the LG model.
-    Use for amino acids.
-Args:
-    alphabet: A string with the amino acids in the desired order.   
-Returns:
-    symmetric d x d  tensor of exchangeabilities and d matrix of equilibrium frequencies.
-"""
 def LG(alphabet="ARNDCQEGHILKMFPSTWYV", dtype=util.default_dtype):
+    """ Returns the exchangeabilities and equilibrium frequencies for the LG model.
+        Use for amino acids.
+
+    Args:
+        alphabet: A string with the amino acids in the desired order.   
+        
+    Returns:
+        symmetric d x d  tensor of exchangeabilities and d matrix of equilibrium frequencies.
+    """
     return parse_paml(LG_paml, alphabet)
 
 
 def parse_paml(lines, desired_alphabet):
     """Parses the content of a paml file.
+
     Returns:
         A symmetric exchangeability matrix with zero diagonal and a frequency vector.
     """
