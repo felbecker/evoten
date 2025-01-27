@@ -492,7 +492,7 @@ class TestModelTF(unittest.TestCase):
         
         np.testing.assert_almost_equal(np.sum(marginals.numpy(), -1), 1., decimal=6)
 
-        # root is already correct, nice
+        # see "doc/Message passing on a tree.pdf" for the expected marginals
         np.testing.assert_almost_equal(marginals[0,0,0], [0.62048769, 0.28582751, 0.0721368 , 0.02154799], decimal=5)
         np.testing.assert_almost_equal(marginals[1,0,0], [0.81955362, 0.0523807 , 0.05419097, 0.07387471], decimal=5)
         np.testing.assert_almost_equal(marginals[2,0,0], [0.35317405, 0.17935929, 0.39939567, 0.06807099], decimal=5)
