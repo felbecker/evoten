@@ -155,12 +155,12 @@ def compute_ancestral_marginals(leaves,
     # Precompute the transition matrices, they'll be reused multiple times
     P_full = backend.make_transition_probs(rate_matrix, branch_lengths) 
 
-    # throughput the method we compute:
+    # throughout the method we compute:
     # beliefs: P(leaves, u | tree) for all ancestral nodes u
     # upward_messages: P(leaves below u | parent(u), tree) for all nodes u except root
     # downward_messages: P(leaves not below u, parent(u) | tree) for all nodes u except root
 
-    # allocate single chunks of memory to work with
+    # allocate single chunk of memory to work with
     beliefs = backend.make_zeros(leaves, tree_handler.num_models, tree_handler.num_anc)
 
     # reorder the leaves to match the tree handler's internal order
@@ -205,7 +205,7 @@ def compute_ancestral_marginals(leaves,
     # downward pass
     belief_updates = [backend.make_zeros(leaves, tree_handler.num_models, 1)] # add zeros for root 
     for height in range(tree_handler.height-1, 0, -1):
-        
+
         # compute updates for the beliefs 
         P = tree_handler.get_values_by_height(P_full, height)
         U = backend.traverse_branch(downward_messages, P, transposed=True)

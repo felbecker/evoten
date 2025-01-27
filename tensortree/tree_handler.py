@@ -294,6 +294,17 @@ class TreeHandler():
         for node in self.bio_tree.get_terminals():
             self.collapse(node.name)
 
+
+    def change_root(self, new_root_name):
+        """ Rotates the tree such that a different node becomes the root. 
+            Calls update() automatically.
+        Args: 
+            new_root_name: Name of the new root node, can be any internal node in the tree.
+        """
+        self.bio_tree.root_with_outgroup(new_root_name)
+        self.root_name = new_root_name
+        self.update(force_reset_init_lengths=True)
+
     
     # applies queued modifications to the tree before update
     def _apply_mods(self, unnamed_node_keyword="tensortree_node"):

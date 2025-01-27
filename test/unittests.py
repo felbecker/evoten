@@ -155,7 +155,7 @@ class TestTree(unittest.TestCase):
                           "test/data/simple2.tree", 
                           "test/data/simple3.tree",
                           "test/data/star.tree"]:
-            t = TreeHandler.read("test/data/simple.tree")
+            t = TreeHandler.read(tree_file)
             height_before = t.height
             layer_1_indices = t.get_parent_indices_by_height(0)
             names = [t.node_names[i] for i in layer_1_indices]
@@ -218,6 +218,13 @@ class TestBackend():
         mut_prob = np.sum(P * (1-np.eye(3)), -1)
         number_of_expected_mutations = - 2./3 * np.log( 1 - 3./2 * mut_prob)
         np.testing.assert_almost_equal(number_of_expected_mutations, 1.) 
+
+    def test_root(self):
+        t = TreeHandler.read("test/data/simple3.tree")
+        t.change_root("H")
+        ref = "((((A:0.10000,B:0.20000):0.30000,C:0.40000):1.50000,D:0.90000):0.80000,E:0.60000,F:0.70000):0.00000;"
+        self.assertEqual(t.to_newick().strip(), ref)
+
 
 
 class TestBackendTF(unittest.TestCase, TestBackend):
@@ -491,6 +498,22 @@ class TestModelTF(unittest.TestCase):
         np.testing.assert_almost_equal(marginals[2,0,0], [0.35317405, 0.17935929, 0.39939567, 0.06807099], decimal=5)
         np.testing.assert_almost_equal(marginals[3,0,0], [0.36416282, 0.13638493, 0.15399601, 0.34545625], decimal=5)
         np.testing.assert_almost_equal(marginals[4,0,0], [0.32532723, 0.19558108, 0.30170421, 0.17738748], decimal=6)
+
+        # test a rotation to a new root, it must not affect the results
+        # note that after rotating, the original root "K" disappears from the tree since it has only one child
+        t.change_root("H")
+        marginals_H = model.compute_ancestral_marginals(leaves, 
+                                                        t, 
+                                                        rate_matrix, 
+                                                        t.branch_lengths,
+                                                        equilibrium_logits=np.log([[1./4]*4]),
+                                                        leaf_names=leaf_names,
+                                                        leaves_are_probabilities=True, 
+                                                        return_probabilities=True)
+        np.testing.assert_almost_equal(marginals_H[0,0,0], [0.62048769, 0.28582751, 0.0721368 , 0.02154799], decimal=5)
+        np.testing.assert_almost_equal(marginals_H[1,0,0], [0.35317405, 0.17935929, 0.39939567, 0.06807099], decimal=5)
+        np.testing.assert_almost_equal(marginals_H[2,0,0], [0.36416282, 0.13638493, 0.15399601, 0.34545625], decimal=5)
+        np.testing.assert_almost_equal(marginals_H[3,0,0], [0.81955362, 0.0523807 , 0.05419097, 0.07387471], decimal=5)
     
 
 
