@@ -82,6 +82,11 @@ class BackendTorch(util.Backend):
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
         return torch.logsumexp(root_logits + equilibrium_logits[:,None], dim=-1)
+    
+
+    def marginals_from_beliefs(self, beliefs):
+        loglik = torch.logsumexp(beliefs[-1:], dim=-1, keepdim=True)
+        return beliefs - loglik
 
 
     def logits_from_probs(self, probs, log_zero_val=-1e3):

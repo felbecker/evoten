@@ -33,7 +33,6 @@ class BackendTF(util.Backend):
         return tf.math.softplus(kernel)
 
 
-
     def make_symmetric_pos_semidefinite(self, kernel):
         R = 0.5 * (kernel + tf.transpose(kernel, [0,2,1])) #make symmetric
         R = tf.math.softplus(R)
@@ -67,6 +66,11 @@ class BackendTF(util.Backend):
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
         return tf.math.reduce_logsumexp(root_logits + equilibrium_logits[:,tf.newaxis], axis=-1)
+    
+
+    def marginals_from_beliefs(self, beliefs):
+        loglik = tf.math.reduce_logsumexp(beliefs[-1:], axis=-1, keepdims=True)
+        return beliefs - loglik
 
 
     def logits_from_probs(self, probs, log_zero_val=-1e3):
@@ -75,7 +79,6 @@ class BackendTF(util.Backend):
         zero_mask = tf.cast(tf.equal(probs, 0), dtype=logits.dtype)
         logits = (1-zero_mask) * logits + zero_mask * log_zero_val
         return logits
-
 
 
     def probs_from_logits(self, logits):

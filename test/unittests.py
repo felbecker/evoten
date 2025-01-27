@@ -282,7 +282,9 @@ class TestModelTF(unittest.TestCase):
         # leaves will have shape (num_leaves, L, models, d)
         leaves = np.array([[0,2,3], [1,1,0], [2,1,0], [3,1,2]])
         #compute reference values
-        refs = np.array([[self.get_ref_star(i, leaves[:,j]) for i in range(4)] for j in range(3)], dtype=util.default_dtype)
+        refs = np.array([[self.get_ref_star(i, leaves[:,j]) 
+                          for i in range(4)] 
+                            for j in range(3)], dtype=util.default_dtype)
         # one-hot encode the leaves
         leaves = np.eye(4, dtype=util.default_dtype)[leaves]
         leaves = leaves[:,np.newaxis]
@@ -426,19 +428,70 @@ class TestModelTF(unittest.TestCase):
         t.set_branch_lengths(branch_lengths_full)
         leaves_full = np.concatenate([leaves]*3, axis=1)
 
-        X_no_broadcast = model.compute_ancestral_probabilities(leaves_full, t, rate_matrices_full, t.branch_lengths, leaf_names,
-                                                               leaves_are_probabilities=True, return_probabilities=True)
+        X_no_broadcast = model.compute_ancestral_probabilities(leaves_full, 
+                                                               t, 
+                                                               rate_matrices_full, 
+                                                               t.branch_lengths, 
+                                                               leaf_names,
+                                                               leaves_are_probabilities=True, 
+                                                               return_probabilities=True)
         np.testing.assert_almost_equal(X_no_broadcast[-1], refs_full)
 
         # 2. broadcasting for leaves
-        X_broadcast_leaves = model.compute_ancestral_probabilities(leaves, t, rate_matrices_full, t.branch_lengths, leaf_names, 
-                                                                    leaves_are_probabilities=True, return_probabilities=True)
+        X_broadcast_leaves = model.compute_ancestral_probabilities(leaves, 
+                                                                   t, 
+                                                                   rate_matrices_full, 
+                                                                   t.branch_lengths, 
+                                                                   leaf_names, 
+                                                                    leaves_are_probabilities=True, 
+                                                                    return_probabilities=True)
         np.testing.assert_almost_equal(X_broadcast_leaves[-1], refs_full)
 
         # 3. broadcasting for rates
-        X_broadcast_rates = model.compute_ancestral_probabilities(leaves_full, t, rate_matrix,  t.branch_lengths, leaf_names,
-                                                                 leaves_are_probabilities=True, return_probabilities=True)
+        X_broadcast_rates = model.compute_ancestral_probabilities(leaves_full, 
+                                                                  t, 
+                                                                  rate_matrix,  
+                                                                  t.branch_lengths, 
+                                                                  leaf_names,
+                                                                 leaves_are_probabilities=True, 
+                                                                 return_probabilities=True)
         np.testing.assert_almost_equal(X_broadcast_rates[-1], np.stack([refs]*3))
+
+
+    def test_marginals_star(self):
+        leaves, leaf_names, t, rate_matrix, ref = self.get_star_inputs_refs()
+        marginals = model.compute_ancestral_marginals(leaves, 
+                                                      t, 
+                                                      rate_matrix, 
+                                                      t.branch_lengths,
+                                                      equilibrium_logits=np.log([[1./4]*4]),
+                                                      leaf_names=leaf_names,
+                                                      leaves_are_probabilities=True, 
+                                                      return_probabilities=True)
+        np.testing.assert_almost_equal(np.sum(marginals.numpy(), -1), 1., decimal=6)
+        np.testing.assert_almost_equal(marginals[0,0], ref / np.sum(ref, axis=-1, keepdims=True), decimal=6)
+        
+
+    def test_marginals_simple3(self):
+        leaves, leaf_names, t, rate_matrix, _ = self.get_simple3_inputs_refs()
+        marginals = model.compute_ancestral_marginals(leaves, 
+                                                        t, 
+                                                        rate_matrix, 
+                                                        t.branch_lengths,
+                                                        equilibrium_logits=np.log([[1./4]*4]),
+                                                        leaf_names=leaf_names,
+                                                        leaves_are_probabilities=True, 
+                                                        return_probabilities=True)
+        
+        np.testing.assert_almost_equal(np.sum(marginals.numpy(), -1), 1., decimal=6)
+
+        # root is already correct, nice
+        np.testing.assert_almost_equal(marginals[0,0,0], [0.62048769, 0.28582751, 0.0721368 , 0.02154799], decimal=5)
+        np.testing.assert_almost_equal(marginals[1,0,0], [0.81955362, 0.0523807 , 0.05419097, 0.07387471], decimal=5)
+        np.testing.assert_almost_equal(marginals[2,0,0], [0.35317405, 0.17935929, 0.39939567, 0.06807099], decimal=5)
+        np.testing.assert_almost_equal(marginals[3,0,0], [0.36416282, 0.13638493, 0.15399601, 0.34545625], decimal=5)
+        np.testing.assert_almost_equal(marginals[4,0,0], [0.32532723, 0.19558108, 0.30170421, 0.17738748], decimal=6)
+    
 
 
 

@@ -70,12 +70,12 @@ class Backend():
 
     def traverse_branch(self, X, branch_probabilities, transposed=False, logarithmic=True):
         """
-        Computes the probabilities after traversing a branch when starting with distributions X.
+        Computes P(X | X') for a branch {X, X'} given the transition matrix.
 
         Args:
             X: tensor with logits of shape (n, k, L, d). 
-            branch_probabilities: tensor of shape (n, k, d, d). 
-            transposed: If True, a transposed transition matrix (X is present, T is future) will be used.
+            branch_probabilities: The transition matrices along each branch. Tensor of shape (n, k, d, d). 
+            transposed: If True, computes P(X' | X) instead.
             
         Returns:
             logits of shape (n, k, L, d)
@@ -110,6 +110,19 @@ class Backend():
             Log-likelihoods of shape (k, L)
         """
         return self.wrapped_backend.loglik_from_root_logits(root_logits, equilibrium_logits)
+    
+
+    def marginals_from_beliefs(self, beliefs):
+        """
+        Computes marginal distributions log P(u) from beliefs log P(u, data).
+
+        Args:
+            beliefs: Logits of shape (n, k, L, d)
+
+        Returns:
+            Marginal distributions of shape (n, k, L, d)
+        """
+        return self.wrapped_backend.marginals_from_beliefs(beliefs)
     
 
     def logits_from_probs(self, probs, log_zero_val=-1e3):
