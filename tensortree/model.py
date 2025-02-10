@@ -8,8 +8,8 @@ import numpy as np
 def traverse_branches(inputs, rate_matrix, branch_lengths, transposed=False, logarithmic=True):
     """
     Traverse n branches (u, inputs) in parallel and compute P(inputs | u).
-    Per default, we assume that u is further in the past than inputs and that the branch_length > 0 between them
-    indicates evolutionary time.
+    Per default, we assume that u is further in the past than inputs and that the branch_length > 0 
+    between them indicates evolutionary time.
 
     Args:
         inputs: Log-likelihoods of shape (n, models, L, d)
@@ -75,7 +75,9 @@ def compute_ancestral_probabilities(leaves,
 
         # aggregate over child nodes and add to anc_logliks
         parent_indices = tree_handler.get_parent_indices_by_height(height)
-        Z = backend.aggregate_children_log_probs(T, parent_indices-tree_handler.num_leaves, tree_handler.num_anc)
+        Z = backend.aggregate_children_log_probs(T, 
+                                                 parent_indices-tree_handler.num_leaves, 
+                                                 tree_handler.num_anc)
         anc_logliks += Z
 
         if height < tree_handler.height-1:
@@ -85,6 +87,7 @@ def compute_ancestral_probabilities(leaves,
         anc_logliks = anc_logliks[-1]
 
     return backend.probs_from_logits(anc_logliks) if return_probabilities else anc_logliks
+
 
 
 def loglik(leaves, 
@@ -115,11 +118,17 @@ def loglik(leaves,
             leaves = backend.logits_from_probs(leaves)[0,:]
         return backend.loglik_from_root_logits(leaves, equilibrium_logits)
     else:
-        root_logits = compute_ancestral_probabilities(leaves, tree_handler, rate_matrix, branch_lengths, leaf_names,
-                                                    return_only_root = True, leaves_are_probabilities=leaves_are_probabilities, 
-                                                    return_probabilities=False)
+        root_logits = compute_ancestral_probabilities(leaves, 
+                                                      tree_handler, 
+                                                      rate_matrix, 
+                                                      branch_lengths, 
+                                                      leaf_names,
+                                                      return_only_root = True, 
+                                                      leaves_are_probabilities=leaves_are_probabilities, 
+                                                      return_probabilities=False)
         return backend.loglik_from_root_logits(root_logits, equilibrium_logits)
     
+
 
 def compute_ancestral_marginals(leaves,
                                 tree_handler : TreeHandler, 
@@ -128,7 +137,9 @@ def compute_ancestral_marginals(leaves,
                                 equilibrium_logits, 
                                 leaf_names=None,
                                 leaves_are_probabilities = True,
-                                return_probabilities = False):
+                                return_probabilities = False,
+                                return_upward_messages = False,
+                                return_downward_messages = False):
     """
     Compute all marginal distributions at internal (ancestral) nodes u in the given leave data 
     and the tree. Formally, the method computes P(u | leaves, tree) for all u that are not leaves.
@@ -142,6 +153,8 @@ def compute_ancestral_marginals(leaves,
         leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
         leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
         return_probabilities: If True, return probabilities instead of logliks.
+        return_upward_messages: If True, also returns upward messages of shape (num_nodes-1, models).
+        return_downward_messages: If True, also returns downward messages of shape (num_nodes-1, models).
 
     Returns:
         Ancestral marginals of shape (num_ancestral_nodes, models, L, d).
@@ -173,7 +186,7 @@ def compute_ancestral_marginals(leaves,
     upward_messages = []
     for height in range(tree_handler.height):
 
-        # traverse all edges (parent(u), u) for all nodes u of same height
+        # traverse upwards all edges (parent(u), u) for all nodes u of same height
         P = tree_handler.get_values_by_height(P_full, height)
         M = backend.traverse_branch(X, P) 
         upward_messages.append(M)
@@ -200,23 +213,98 @@ def compute_ancestral_marginals(leaves,
     # initialize X for the downward pass, for each child of the root with 
     # height=tree.height-1, we compute a message that summarizes the likelihood of all 
     # other children of the root
-    downward_messages = beliefs[-1:] - upward_messages[-1]
+    downward_messages_by_cur_height = beliefs[-1:] - upward_messages[-1]
 
     # downward pass
-    belief_updates = [backend.make_zeros(leaves, tree_handler.num_models, 1)] # add zeros for root 
+    belief_updates = backend.make_zeros(leaves, tree_handler.num_models, 1) # add zeros for root 
+
+    if return_downward_messages:
+        downward_messages = [downward_messages_by_cur_height]
+
     for height in range(tree_handler.height-1, 0, -1):
 
         # compute updates for the beliefs 
         P = tree_handler.get_values_by_height(P_full, height)
-        U = backend.traverse_branch(downward_messages, P, transposed=True)
-        belief_updates.insert(0, U)
+        U = backend.traverse_branch(downward_messages_by_cur_height, P, transposed=True)
+        belief_updates = backend.concat([U, belief_updates], axis=0)
 
-        if height > 1:
+        # compute the downward messages for the next layer, unless height==1 and not return_downward_messages
+        if height > 1 or return_downward_messages: 
+
             # compute downward messages
-            layer_beliefs = tree_handler.get_values_by_height(beliefs, height, leaves_included=False)
-            downward_messages = U + layer_beliefs - upward_messages[height-1]
+            parent_indices = tree_handler.get_parent_indices_by_height(height-1)
+            layer_beliefs = backend.gather(beliefs, parent_indices-tree_handler.num_leaves)
+            parent_updates = backend.gather(belief_updates, parent_indices-tree_handler.cum_layer_sizes[height-1])
+            downward_messages_by_cur_height = parent_updates + layer_beliefs - upward_messages[height-1]
 
-    beliefs += backend.concat(belief_updates, axis=0)
+            if return_downward_messages:
+                downward_messages.append(downward_messages_by_cur_height)
+            
+
+    beliefs += belief_updates
     marginals = backend.marginals_from_beliefs(beliefs)
 
-    return backend.probs_from_logits(marginals) if return_probabilities else marginals
+    results = [marginals]
+
+    if return_upward_messages:
+        results.append(backend.concat(upward_messages, axis=0))
+
+    if return_downward_messages:
+        results.append(backend.concat(downward_messages[::-1], axis=0))
+
+    if return_probabilities:
+        results = [backend.probs_from_logits(x) for x in results]
+
+    return tuple(results) if len(results) > 1 else results[0]
+
+
+
+def compute_leaf_out_marginals(leaves,
+                                tree_handler : TreeHandler, 
+                                rate_matrix, 
+                                branch_lengths, 
+                                equilibrium_logits, 
+                                leaf_names=None,
+                                leaves_are_probabilities = True,
+                                return_probabilities = False):
+    """
+    Computes the marginal distributions of the leaves given all other leaves, the tree topology 
+    and the rate matrix. Formally, the method computes P(u | leaves_except_u, tree, rates) for all leaves u.
+
+    Args:
+        leaves: Logits of all symbols at all leaves of shape (num_leaves, models, L, d).
+        tree_handler: TreeHandler object
+        rate_matrix: Rate matrix of shape (models, d, d)
+        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        equilibrium_logits: Equilibrium distribution logits of shape (models, d).
+        leaf_names: Names of the leaves (list-like of length num_leaves). Used to reorder correctly.
+        leaves_are_probabilities: If True, leaves are assumed to be probabilities or one-hot encoded.
+        return_probabilities: If True, return probabilities instead of logliks.
+
+    Returns:
+        Leaf-out marginals of shape (num_leaves, models, L, d).
+    """
+    _, downward_messages = compute_ancestral_marginals(leaves,
+                                                         tree_handler, 
+                                                         rate_matrix, 
+                                                         branch_lengths, 
+                                                         equilibrium_logits, 
+                                                         leaf_names,
+                                                         leaves_are_probabilities=leaves_are_probabilities,
+                                                         return_probabilities=False,
+                                                         return_upward_messages=False,
+                                                         return_downward_messages=True)
+    
+    # gather downward messages to leaves
+    downward_messages_to_leaves = downward_messages[:tree_handler.num_leaves]
+    
+    # compute the transition matrices for all leaf edges
+    P_leaf_edges = backend.make_transition_probs(rate_matrix, branch_lengths[:tree_handler.num_leaves]) 
+
+    # compute P(u, leaves_except_u | tree, rates)
+    leaf_out = backend.traverse_branch(downward_messages_to_leaves, P_leaf_edges, transposed=True)
+
+    # compzute P(u | leaves_except_u, tree, rates)
+    leaf_out = backend.marginals_from_beliefs(leaf_out, same_loglik=False)
+
+    return backend.probs_from_logits(leaf_out) if return_probabilities else leaf_out

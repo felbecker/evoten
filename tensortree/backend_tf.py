@@ -68,8 +68,10 @@ class BackendTF(util.Backend):
         return tf.math.reduce_logsumexp(root_logits + equilibrium_logits[:,tf.newaxis], axis=-1)
     
 
-    def marginals_from_beliefs(self, beliefs):
-        loglik = tf.math.reduce_logsumexp(beliefs[-1:], axis=-1, keepdims=True)
+    def marginals_from_beliefs(self, beliefs, same_loglik=True):
+        loglik = tf.math.reduce_logsumexp(beliefs[-1:] if same_loglik else beliefs, 
+                                          axis=-1, 
+                                          keepdims=True)
         return beliefs - loglik
 
 

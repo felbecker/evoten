@@ -126,21 +126,6 @@ class TreeHandler():
         s = self.layer_sizes[height]
         n = int(not leaves_included) * self.layer_sizes[0]
         return kernel[k-s-n:k-n]
-    
-
-    def get_leaf_parent_values(self, kernel):
-        """ Retrieves the parent values for all leaf nodes.
-            Note: This is not the same as get_values_by_height(kernel, 1),
-            as the parents of leaf nodes can be at different heights.
-
-        Args:
-            kernel: A tensor of shape (num_nodes, ...) 
-
-        Returns: 
-            Tensor of shape (num_leaves, ...) representing the parent values for each leaf node.
-        """
-        leaf_parents = self.get_parent_indices_by_height(0)
-        return backend.gather(kernel, leaf_parents, 0)
 
 
     def get_leaf_counts_by_height(self, height):    

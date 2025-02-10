@@ -112,17 +112,18 @@ class Backend():
         return self.wrapped_backend.loglik_from_root_logits(root_logits, equilibrium_logits)
     
 
-    def marginals_from_beliefs(self, beliefs):
+    def marginals_from_beliefs(self, beliefs, same_loglik=True):
         """
         Computes marginal distributions log P(u) from beliefs log P(u, data).
 
         Args:
             beliefs: Logits of shape (n, k, L, d)
+            same_loglik: If True, the likelihoods are assumed to be identical for all n nodes.
 
         Returns:
             Marginal distributions of shape (n, k, L, d)
         """
-        return self.wrapped_backend.marginals_from_beliefs(beliefs)
+        return self.wrapped_backend.marginals_from_beliefs(beliefs, same_loglik)
     
 
     def logits_from_probs(self, probs, log_zero_val=-1e3):

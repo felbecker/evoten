@@ -84,8 +84,10 @@ class BackendTorch(util.Backend):
         return torch.logsumexp(root_logits + equilibrium_logits[:,None], dim=-1)
     
 
-    def marginals_from_beliefs(self, beliefs):
-        loglik = torch.logsumexp(beliefs[-1:], dim=-1, keepdim=True)
+    def marginals_from_beliefs(self, beliefs, same_loglik=True):
+        loglik = torch.logsumexp(beliefs[-1:] if same_loglik else beliefs, 
+                                 dim=-1, 
+                                 keepdim=True)
         return beliefs - loglik
 
 

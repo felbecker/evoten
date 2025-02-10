@@ -97,13 +97,7 @@ class TestTree(unittest.TestCase):
         t3 = TreeHandler.read("test/data/star.tree")
         branch_lens3 = np.array([0.4, 0.6, 0.1, 0.5], dtype=util.default_dtype)
         np.testing.assert_equal(t3.get_values_by_height(branch_lens3, 0), branch_lens3)
-
-    def test_get_leaf_parent_values(self):
-        t3 = TreeHandler.read("test/data/simple3.tree")
-        values = np.arange(t3.num_nodes)
-        leaf_parents = t3.get_leaf_parent_values(values)
-        # the order is left to right
-        np.testing.assert_equal(leaf_parents, np.array([6,6,8,9,7,7]))
+        
 
     # tests if the branch lengths from the tree files are read correctly
     def test_branch_lengths(self):
@@ -522,6 +516,28 @@ class TestModelTF(unittest.TestCase):
         np.testing.assert_almost_equal(marginals_H[3,0,0], [0.81955362, 0.0523807 , 0.05419097, 0.07387471], decimal=5)
     
 
+    def test_leaf_out_marginals_simple3(self):
+        leaves, leaf_names, t, rate_matrix, _ = self.get_simple3_inputs_refs()
+        leaf_out_marginals = model.compute_leaf_out_marginals(leaves, 
+                                                            t, 
+                                                            rate_matrix, 
+                                                            t.branch_lengths,
+                                                            equilibrium_logits=np.log([[1./4]*4]),
+                                                            leaf_names=leaf_names,
+                                                            leaves_are_probabilities=True, 
+                                                            return_probabilities=True)
+        np.testing.assert_almost_equal(leaf_out_marginals[0,0,0], 
+                                       [0.07784672, 0.65521162, 0.18869241, 0.07824925], decimal=5)
+        np.testing.assert_almost_equal(leaf_out_marginals[1,0,0], 
+                                       [0.7055906 , 0.07967477, 0.13374548, 0.08098915], decimal=5)
+        np.testing.assert_almost_equal(leaf_out_marginals[2,0,0], 
+                                       [0.4170595 , 0.26266192, 0.1564732 , 0.16380537], decimal=5)
+        np.testing.assert_almost_equal(leaf_out_marginals[3,0,0], 
+                                       [0.31507678, 0.2272743 , 0.23406292, 0.223586], decimal=5)
+        np.testing.assert_almost_equal(leaf_out_marginals[4,0,0], 
+                                       [0.36942383, 0.2008257 , 0.20300842, 0.22674205], decimal=5)
+        np.testing.assert_almost_equal(leaf_out_marginals[5,0,0], 
+                                       [0.37125943, 0.20210377, 0.20384607, 0.22279073], decimal=5)
 
 
 class TestModelPytorch(TestModelTF):
