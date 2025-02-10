@@ -114,7 +114,7 @@ class TreeHandler():
         """ Retrieves all values from the leftmost axis of a tensor corresponding to all nodes with a given height.
 
         Args:
-            kernel: A tensor of shape (num_nodes-1, ...) or (num_nodes, ...) (root might be excluded),
+            kernel: A tensor of shape (num_nodes-1, ...) or (num_nodes, ...) (root last; might be excluded),
             representing all branch lengths ordered by tree height and left-to-right (starting with leaves).
             height: Height of the subtree rooted at a node.
             leaves_included: If False, the method will assume a kernel if shape (num_nodes-num_leaves, ...) and height=0 is invalid.
@@ -126,9 +126,23 @@ class TreeHandler():
         s = self.layer_sizes[height]
         n = int(not leaves_included) * self.layer_sizes[0]
         return kernel[k-s-n:k-n]
-
-
     
+
+    def get_leaf_parent_values(self, kernel):
+        """ Retrieves the parent values for all leaf nodes.
+            Note: This is not the same as get_values_by_height(kernel, 1),
+            as the parents of leaf nodes can be at different heights.
+
+        Args:
+            kernel: A tensor of shape (num_nodes, ...) 
+
+        Returns: 
+            Tensor of shape (num_leaves, ...) representing the parent values for each leaf node.
+        """
+        leaf_parents = self.get_parent_indices_by_height(0)
+        return backend.gather(kernel, leaf_parents, 0)
+
+
     def get_leaf_counts_by_height(self, height):    
         r""" Retrieves a vector with the number of child nodes that are leafs for each node in the given layer.
             Example:
@@ -179,7 +193,7 @@ class TreeHandler():
             axis: The axis along which the tensor should be reordered.
         """
         permutation = np.argsort(self.get_indices(node_names))
-        return backend.reorder(tensor, permutation, 0)
+        return backend.gather(tensor, permutation, 0)
     
 
     def update(self, unnamed_node_keyword="tensortree_node", force_reset_init_lengths=False):

@@ -85,8 +85,8 @@ class BackendTF(util.Backend):
         return tf.math.exp(logits)
 
 
-    def reorder(self, tensor, permutation, axis=0):
-        return tf.gather(tensor, permutation, axis=axis)
+    def gather(self, tensor, indices, axis=0):
+        return tf.gather(tensor, indices, axis=axis)
 
 
     def concat(self, tensors, axis=0):

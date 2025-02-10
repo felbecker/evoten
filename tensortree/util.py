@@ -138,11 +138,11 @@ class Backend():
         return self.wrapped_backend.probs_from_logits(logits)
 
 
-    def reorder(self, tensor, permutation, axis=0):
+    def gather(self, tensor, indices, axis=0):
         """ 
-        Reorders a tensor along an axis.
+        Gathers values from a tensor along an axis.
         """
-        return self.wrapped_backend.reorder(tensor, permutation, axis)
+        return self.wrapped_backend.gather(tensor, indices, axis)
 
 
     def concat(self, tensors, axis=0):

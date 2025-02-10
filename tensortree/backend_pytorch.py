@@ -102,10 +102,10 @@ class BackendTorch(util.Backend):
         return torch.exp(logits)
 
 
-    def reorder(self, tensor, permutation, axis=0):
+    def gather(self, tensor, indices, axis=0):
         tensor = _ensure_tensor(tensor)
-        permutation = _ensure_tensor(permutation)
-        return tensor[permutation]
+        indices = _ensure_tensor(indices)
+        return tensor[indices]
 
 
     def concat(self, tensors, axis=0):

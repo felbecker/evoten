@@ -98,6 +98,12 @@ class TestTree(unittest.TestCase):
         branch_lens3 = np.array([0.4, 0.6, 0.1, 0.5], dtype=util.default_dtype)
         np.testing.assert_equal(t3.get_values_by_height(branch_lens3, 0), branch_lens3)
 
+    def test_get_leaf_parent_values(self):
+        t3 = TreeHandler.read("test/data/simple3.tree")
+        values = np.arange(t3.num_nodes)
+        leaf_parents = t3.get_leaf_parent_values(values)
+        # the order is left to right
+        np.testing.assert_equal(leaf_parents, np.array([6,6,8,9,7,7]))
 
     # tests if the branch lengths from the tree files are read correctly
     def test_branch_lengths(self):
@@ -499,8 +505,8 @@ class TestModelTF(unittest.TestCase):
         np.testing.assert_almost_equal(marginals[3,0,0], [0.36416282, 0.13638493, 0.15399601, 0.34545625], decimal=5)
         np.testing.assert_almost_equal(marginals[4,0,0], [0.32532723, 0.19558108, 0.30170421, 0.17738748], decimal=6)
 
-        # test a rotation to a new root, it must not affect the results
-        # note that after rotating, the original root "K" disappears from the tree since it has only one child
+        # test a rotation to a new root, it must not affect the marginals
+        # note that after rotating, the original root "K" disappears, as it was bifurcating
         t.change_root("H")
         marginals_H = model.compute_ancestral_marginals(leaves, 
                                                         t, 
