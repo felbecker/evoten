@@ -270,7 +270,7 @@ class TreeHandler():
         self.init_branch_lengths = np.zeros((self.num_nodes-1, 1), dtype=default_dtype) 
         for clade in self.bio_tree.find_clades(order="level"):
             for child in clade:
-                self.init_branch_lengths[self.nodes[child.name].index] = self.bio_tree.distance(clade, child)
+                self.init_branch_lengths[self.nodes[child.name].index] = child.branch_length
 
 
     def collapse(self, node_name):
