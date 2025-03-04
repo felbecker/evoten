@@ -344,7 +344,9 @@ class TreeHandler():
         return handle.getvalue()
     
 
-    def draw(self, axes=None):
+    def draw(self, no_labels=False, axes=None):
         """ Plots the tree. """
         self.bio_tree.ladderize()  # Flip branches so deeper clades are displayed at top
-        Phylo.draw(self.bio_tree, axes=axes)
+        Phylo.draw(self.bio_tree, 
+                   label_func=lambda x: "" if no_labels else x.name,
+                   axes=axes)
