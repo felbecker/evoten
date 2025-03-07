@@ -62,7 +62,7 @@ class Backend():
         return self.wrapped_backend.make_symmetric_pos_semidefinite(kernel)
     
 
-    def make_equilibrium(kernel):
+    def make_equilibrium(self, kernel):
         """ Constructs a stack of equilibrium distributions from a parameter kernel.
         """
         return self.wrapped_backend.make_equilibrium(kernel)
