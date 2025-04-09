@@ -23,7 +23,7 @@ class TreeHandler():
     height-wise processing of the tree.
 
     Args:
-        tree: Bio.Phylo tree object that will we wrapped by this class. If None, an tree with only a root node will be created.
+        tree: Bio.Phylo tree object that will we wrapped by this class. If None, a tree with only a root node will be created.
         root_name: Name of the root node when creating a new tree.
     """
     def __init__(self, tree : Phylo.BaseTree = None, root_name=None):
@@ -85,7 +85,7 @@ class TreeHandler():
         return self.nodes[node_name].index
     
 
-    def set_branch_lengths(self, branch_lengths):
+    def set_branch_lengths(self, branch_lengths, update_phylo_tree=True):
         """ Sets the branch lengths of the tree.
 
         Args:
@@ -94,6 +94,11 @@ class TreeHandler():
         """
         self.branch_lengths = branch_lengths
         self.num_models = branch_lengths.shape[1]
+        if update_phylo_tree:
+            assert branch_lengths.shape[-1] == 1, "Branch lengths must be of shape (num_nodes-1, 1) when updating the phylogenetic tree."
+            for clade in self.bio_tree.find_clades(order="level"):
+                for child in clade:
+                    child.branch_length = branch_lengths[self.nodes[child.name].index, 0]
 
 
     def get_branch_lengths_by_height(self, height):
@@ -261,7 +266,7 @@ class TreeHandler():
             # initially, get_branch_lengths will return branch lengths
             # parsed from the tree file
             # calling set_branch_lengths later will overwrite these values
-            self.set_branch_lengths(self.init_branch_lengths)
+            self.set_branch_lengths(self.init_branch_lengths, update_phylo_tree=False)
 
 
     def setup_init_branch_lengths(self):

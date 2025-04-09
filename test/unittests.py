@@ -432,7 +432,7 @@ class TestModelTF(unittest.TestCase):
         # 1. no broadcasting for rates and leaves
         rate_matrices_full = np.concatenate([rate_matrix, rate_matrices], axis=0)
         branch_lengths_full = np.concatenate([branch_lengths]*3, axis=1)
-        t.set_branch_lengths(branch_lengths_full)
+        t.set_branch_lengths(branch_lengths_full, update_phylo_tree=False)
         leaves_full = np.concatenate([leaves]*3, axis=1)
 
         X_no_broadcast = model.compute_ancestral_probabilities(leaves_full, 
