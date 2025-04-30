@@ -1,7 +1,6 @@
 import os
+
 import numpy as np
-
-
 
 default_dtype = np.float32
 supported_backends = ["tensorflow", "pytorch"]
@@ -11,16 +10,24 @@ supported_backends = ["tensorflow", "pytorch"]
 class Backend():
     def __init__(self):
         # the wrapped backend that contains the actual implementation
-        # the global backend will always be the same object to avoid importing issues
-        # but the wrapped backend can change at will
+        # the global backend will always be the same object to avoid importing 
+        # issues but the wrapped backend can change at will
         self.wrapped_backend : Backend = None
     
     
-    def make_rate_matrix(self, exchangeabilities, equilibrium, epsilon=1e-16, normalized=True):
-        """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 expected mutation per site.
+    def make_rate_matrix(
+            self, 
+            exchangeabilities, 
+            equilibrium, 
+            epsilon=1e-16, 
+            normalized=True
+        ):
+        """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 
+        expected mutation per site.
 
         Args:
-            exchangeabilities: Symmetric, positive-semidefinite exchangeability matrices with zero diagonal. Shape: (k, d, d) 
+            exchangeabilities: Symmetric, positive-semidefinite exchangeability 
+                matrices with zero diagonal. Shape: (k, d, d) 
             equilibrium: A vector of relative frequencies. Shape: (k, d) 
             epsilon: Small value to avoid division by zero.
             normalized: If True, the rate matrices are normalized.
@@ -28,11 +35,14 @@ class Backend():
         Returns:
             Normalized rate matrices. Output shape: (k, d, d) 
         """
-        return self.wrapped_backend.make_rate_matrix(exchangeabilities, equilibrium, epsilon, normalized)
+        return self.wrapped_backend.make_rate_matrix(
+            exchangeabilities, equilibrium, epsilon, normalized
+        )
     
     
     def make_transition_probs(self, rate_matrix, distances):
-        """Constructs a probability matrix of mutating or copying one an input to another over a given amount of evolutionary time.
+        """Constructs a probability matrix of mutating or copying one an input
+        to another over a given amount of evolutionary time.
         
         Args:
             rate_matrix: Rate matrix of shape (k, d, d).
@@ -41,7 +51,9 @@ class Backend():
         Returns:
             Stack of probability matrices of shape (n, k, d, d)
         """
-        return self.wrapped_backend.make_transition_probs(rate_matrix, distances)
+        return self.wrapped_backend.make_transition_probs(
+            rate_matrix, distances
+        )
     
 
     def make_branch_lengths(self, kernel):
@@ -53,7 +65,8 @@ class Backend():
 
     def make_symmetric_pos_semidefinite(self, kernel):
         """
-        Constructs a stack of symmetric, positive-semidefinite matrices with zero diagonal from a parameter kernel.
+        Constructs a stack of symmetric, positive-semidefinite matrices with 
+        zero diagonal from a parameter kernel.
         Note: Uses an overparameterized d x d kernel for speed of computation.
 
         Args:
@@ -68,19 +81,24 @@ class Backend():
         return self.wrapped_backend.make_equilibrium(kernel)
     
 
-    def traverse_branch(self, X, branch_probabilities, transposed=False, logarithmic=True):
+    def traverse_branch(
+            self, X, branch_probabilities, transposed=False, logarithmic=True
+        ):
         """
         Computes P(X | X') for a branch {X, X'} given the transition matrix.
 
         Args:
             X: tensor with logits of shape (n, k, L, d). 
-            branch_probabilities: The transition matrices along each branch. Tensor of shape (n, k, d, d). 
+            branch_probabilities: The transition matrices along each branch. 
+            Tensor of shape (n, k, d, d). 
             transposed: If True, computes P(X' | X) instead.
             
         Returns:
             logits of shape (n, k, L, d)
         """
-        return self.wrapped_backend.traverse_branch(X, branch_probabilities, transposed, logarithmic)
+        return self.wrapped_backend.traverse_branch(
+            X, branch_probabilities, transposed, logarithmic
+        )
     
 
     def aggregate_children_log_probs(self, X, parent_map, num_ancestral):
@@ -89,13 +107,16 @@ class Backend():
 
         Args:
             X: tensor of shape (n, ...)
-            parent_map: A list-like object of shape (n) that contains the index of parent nodes.
+            parent_map: A list-like object of shape (n) that contains the index 
+            of parent nodes.
             num_ancestral: Total number of ancestral nodes.
 
         Returns:
             tensor of shape (num_ancestral, ...).
         """
-        return self.wrapped_backend.aggregate_children_log_probs(X, parent_map, num_ancestral)
+        return self.wrapped_backend.aggregate_children_log_probs(
+            X, parent_map, num_ancestral
+        )
     
     
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
@@ -109,7 +130,9 @@ class Backend():
         Returns:
             Log-likelihoods of shape (k, L)
         """
-        return self.wrapped_backend.loglik_from_root_logits(root_logits, equilibrium_logits)
+        return self.wrapped_backend.loglik_from_root_logits(
+            root_logits, equilibrium_logits
+        )
     
 
     def marginals_from_beliefs(self, beliefs, same_loglik=True):
@@ -118,7 +141,8 @@ class Backend():
 
         Args:
             beliefs: Logits of shape (n, k, L, d)
-            same_loglik: If True, the likelihoods are assumed to be identical for all n nodes.
+            same_loglik: If True, the likelihoods are assumed to be identical 
+                for all n nodes.
 
         Returns:
             Marginal distributions of shape (n, k, L, d)
@@ -127,7 +151,8 @@ class Backend():
     
 
     def logits_from_probs(self, probs, log_zero_val=-1e3):
-        """ Computes element-wise logarithm with output_i=log_zero_val where x_i=0.
+        """ Computes element-wise logarithm with output_i=log_zero_val where 
+        x_i=0.
         """
         return self.wrapped_backend.logits_from_probs(probs, log_zero_val)
     
@@ -184,7 +209,8 @@ def _validate_backend(backend):
 # null object that raises errors upon usage that request to call set_backend
 class NullBackend(Backend):
     def __getattr__(self, name):
-        raise ValueError("No backend loaded. Please call tensortree.set_backend(<name>) first." 
+        raise ValueError("No backend loaded. Please call "\
+                         "tensortree.set_backend(<name>) first." 
                          + f"Supported backends are: {supported_backends}.")
 
 
@@ -194,9 +220,9 @@ backend.wrapped_backend = NullBackend()
 
 
 
-####################################################################################################
+################################################################################
 # Input/output utility
-####################################################################################################
+################################################################################
 
 def encode_one_hot(sequences, alphabet):
     """ One-hot encodes a list of strings over the given alphabet.

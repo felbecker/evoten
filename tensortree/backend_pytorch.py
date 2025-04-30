@@ -1,9 +1,10 @@
-import torch
-import numpy as np
-from Bio.Phylo import BaseTree
 from functools import partial
-from tensortree import util
 
+import numpy as np
+import torch
+from Bio.Phylo import BaseTree
+
+from tensortree import util
 
 
 def _ensure_tensor(x):
@@ -17,7 +18,13 @@ def _ensure_tensor(x):
 # Documentation in the base class. Hover over the method name to see the docstring.
 class BackendTorch(util.Backend):
 
-    def make_rate_matrix(self, exchangeabilities, equilibrium, epsilon=1e-16, normalized=True):
+    def make_rate_matrix(
+            self, 
+            exchangeabilities, 
+            equilibrium, 
+            epsilon=1e-16, 
+            normalized=True
+        ):
         exchangeabilities = _ensure_tensor(exchangeabilities)
         equilibrium = _ensure_tensor(equilibrium)
         Q = torch.mul(exchangeabilities, equilibrium[:,None])
@@ -39,7 +46,8 @@ class BackendTorch(util.Backend):
         distances = _ensure_tensor(distances)
         rate_matrix = rate_matrix[None]
         distances = distances[..., None, None]
-        P = torch.linalg.matrix_exp(rate_matrix * distances) # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
+        # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
+        P = torch.linalg.matrix_exp(rate_matrix * distances) 
         return P
 
 
@@ -59,7 +67,13 @@ class BackendTorch(util.Backend):
         return torch.nn.functional.softmax(kernel, dim=-1)
 
 
-    def traverse_branch(self, X, branch_probabilities, transposed=False, logarithmic=True):
+    def traverse_branch(
+            self, 
+            X, 
+            branch_probabilities, 
+            transposed=False, 
+            logarithmic=True
+        ):
         X = _ensure_tensor(X)
         branch_probabilities = _ensure_tensor(branch_probabilities)
         if logarithmic:
@@ -76,7 +90,9 @@ class BackendTorch(util.Backend):
     def aggregate_children_log_probs(self, X, parent_map, num_ancestral):
         parent_map = _ensure_tensor(parent_map).to(X.device)
         #return tf.math.unsorted_segment_sum(X, parent_map, num_ancestral)
-        Y = torch.zeros(num_ancestral, *X.shape[1:], dtype=X.dtype, device=X.device)
+        Y = torch.zeros(
+            num_ancestral, *X.shape[1:], dtype=X.dtype, device=X.device
+        )
         I = parent_map[:,None,None,None].expand(X.shape)
         Y = Y.scatter_add(0, I, X)
         return Y
@@ -118,5 +134,7 @@ class BackendTorch(util.Backend):
 
 
     def make_zeros(self, leaves, models, num_nodes):
-        return torch.zeros((num_nodes, models, leaves.shape[-2], leaves.shape[-1]), 
-                        dtype=leaves.dtype, device=leaves.device)
+        return torch.zeros(
+            (num_nodes, models, leaves.shape[-2], leaves.shape[-1]), 
+            dtype=leaves.dtype, device=leaves.device
+        )

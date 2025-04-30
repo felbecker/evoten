@@ -1,17 +1,28 @@
-import tensorflow as tf
-import numpy as np
-from Bio.Phylo import BaseTree
 from functools import partial
+
+import numpy as np
+import tensorflow as tf
+from Bio.Phylo import BaseTree
+
 from tensortree import util
 
 
-# Documentation in the base class. Hover over the method name to see the docstring.
+# Documentation in the base class. Hover over the method name to see the 
+# docstring.
 class BackendTF(util.Backend):
 
-    def make_rate_matrix(self, exchangeabilities, equilibrium, epsilon=1e-16, normalized=True):
+    def make_rate_matrix(
+            self, 
+            exchangeabilities, 
+            equilibrium, 
+            epsilon=1e-16, 
+            normalized=True
+        ):
         Q = exchangeabilities *  tf.expand_dims(equilibrium, 1)
         diag = tf.reduce_sum(Q, axis=-1, keepdims=True)
-        eye = tf.eye(tf.shape(diag)[1], batch_shape=tf.shape(diag)[:1], dtype=diag.dtype)
+        eye = tf.eye(
+            tf.shape(diag)[1], batch_shape=tf.shape(diag)[:1], dtype=diag.dtype
+        )
         Q -= diag * eye
         # normalize
         if normalized:
@@ -24,7 +35,8 @@ class BackendTF(util.Backend):
     def make_transition_probs(self, rate_matrix, distances):
         rate_matrix = tf.expand_dims(rate_matrix, 0)
         distances = tf.expand_dims(tf.expand_dims(distances, -1), -1)
-        P = tf.linalg.expm(rate_matrix * distances) # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
+        # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
+        P = tf.linalg.expm(rate_matrix * distances) 
         return P
 
 
@@ -44,9 +56,16 @@ class BackendTF(util.Backend):
         return tf.nn.softmax(kernel)
 
 
-    def traverse_branch(self, X, branch_probabilities, transposed=False, logarithmic=True):
+    def traverse_branch(
+            self, 
+            X, 
+            branch_probabilities, 
+            transposed=False, 
+            logarithmic=True
+        ):
         if True:
-            #fast matmul version, but requires conversion, might be numerically unstable
+            # fast matmul version, but requires conversion, might be numerically 
+            # unstable
             if logarithmic:
                 X = self.probs_from_logits(X)
             X = tf.matmul(X, branch_probabilities, transpose_b=not transposed)
@@ -56,7 +75,10 @@ class BackendTF(util.Backend):
             if not logarithmic:
                 raise ValueError("Non-logarithmic traversal is not supported.")
             # slower (no matmul) but more stable? 
-            X = tf.math.reduce_logsumexp(X[..., tf.newaxis, :] + tf.math.log(branch_probabilities[:,:,tf.newaxis]), axis=-1)
+            X = tf.math.reduce_logsumexp(
+                X[..., tf.newaxis, :] + tf.math.log(branch_probabilities[:,:,tf.newaxis]), 
+                axis=-1
+            )
         return X
 
 
@@ -65,18 +87,24 @@ class BackendTF(util.Backend):
 
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
-        return tf.math.reduce_logsumexp(root_logits + equilibrium_logits[:,tf.newaxis], axis=-1)
+        return tf.math.reduce_logsumexp(
+            root_logits + equilibrium_logits[:,tf.newaxis], axis=-1
+        )
     
 
     def marginals_from_beliefs(self, beliefs, same_loglik=True):
-        loglik = tf.math.reduce_logsumexp(beliefs[-1:] if same_loglik else beliefs, 
-                                          axis=-1, 
-                                          keepdims=True)
+        loglik = tf.math.reduce_logsumexp(
+            beliefs[-1:] if same_loglik else beliefs, 
+            axis=-1, 
+            keepdims=True
+        )
         return beliefs - loglik
 
 
     def logits_from_probs(self, probs, log_zero_val=-1e3):
-        epsilon = tf.constant(np.finfo(util.default_dtype).tiny, dtype=probs.dtype)
+        epsilon = tf.constant(
+            np.finfo(util.default_dtype).tiny, dtype=probs.dtype
+        )
         logits = tf.math.log(tf.maximum(probs, epsilon))
         zero_mask = tf.cast(tf.equal(probs, 0), dtype=logits.dtype)
         logits = (1-zero_mask) * logits + zero_mask * log_zero_val

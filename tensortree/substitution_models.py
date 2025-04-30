@@ -1,16 +1,18 @@
 import numpy as np
+
 from tensortree import util
 
 
-
 def jukes_cantor(mue=4./3, d=4, dtype=util.default_dtype):
-    """ Returns the exchangeabilities and equilibrium frequencies for the Jukes-Cantor model.
+    """ Returns the exchangeabilities and equilibrium frequencies for the 
+    Jukes-Cantor model.
 
     Args:
         mue: Scalar, list or 1D array.
 
     Returns:
-        symmetric k x d x d  tensor of exchangeabilities and k x d matrix of equilibrium frequencies.
+        symmetric k x d x d  tensor of exchangeabilities and k x d matrix of 
+            equilibrium frequencies.
         k is the length of mue or 1 if mue is a scalar.
     """
     if isinstance(mue, list):
@@ -28,14 +30,16 @@ def jukes_cantor(mue=4./3, d=4, dtype=util.default_dtype):
 
 
 def LG(alphabet="ARNDCQEGHILKMFPSTWYV", dtype=util.default_dtype):
-    """ Returns the exchangeabilities and equilibrium frequencies for the LG model.
+    """ Returns the exchangeabilities and equilibrium frequencies for the LG 
+        model.
         Use for amino acids.
 
     Args:
         alphabet: A string with the amino acids in the desired order.   
         
     Returns:
-        symmetric d x d  tensor of exchangeabilities and d matrix of equilibrium frequencies.
+        symmetric d x d  tensor of exchangeabilities and d matrix of 
+        equilibrium frequencies.
     """
     return parse_paml(LG_paml, alphabet)
 
@@ -44,7 +48,8 @@ def parse_paml(lines, desired_alphabet):
     """Parses the content of a paml file.
 
     Returns:
-        A symmetric exchangeability matrix with zero diagonal and a frequency vector.
+        A symmetric exchangeability matrix with zero diagonal and a frequency 
+        vector.
     """
     paml_alphabet = "A R N D C Q E G H I L K M F P S T W Y V".split(" ")
     s = len(paml_alphabet)
@@ -53,7 +58,10 @@ def parse_paml(lines, desired_alphabet):
         R[i,:i] = R[:i,i] = np.fromstring(lines[i-1], sep=" ") 
     p = np.fromstring(lines[s-1], sep=" ", dtype=np.float32)
     #reorganize to match the amino acid order in desired_alphabet
-    perm = [paml_alphabet.index(aa) for aa in desired_alphabet if aa in paml_alphabet]
+    perm = [
+        paml_alphabet.index(aa) 
+        for aa in desired_alphabet if aa in paml_alphabet
+    ]
     p = p[perm]
     R = R[perm, :]
     R = R[:, perm]
