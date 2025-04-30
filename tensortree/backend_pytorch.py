@@ -60,6 +60,8 @@ class BackendTorch(util.Backend):
 
 
     def traverse_branch(self, X, branch_probabilities, transposed=False, logarithmic=True):
+        X = _ensure_tensor(X)
+        branch_probabilities = _ensure_tensor(branch_probabilities)
         if logarithmic:
             X = self.probs_from_logits(X)
         if transposed:
@@ -111,6 +113,7 @@ class BackendTorch(util.Backend):
 
 
     def concat(self, tensors, axis=0):
+        tensors = [_ensure_tensor(t) for t in tensors]
         return torch.cat(tensors, axis=axis)
 
 

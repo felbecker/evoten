@@ -540,6 +540,27 @@ class TestModelTF(unittest.TestCase):
                                        [0.37125943, 0.20210377, 0.20384607, 0.22279073], decimal=5)
 
 
+    def test_propagate_simple(self):
+        tree = TreeHandler.read("test/data/star.tree")
+        rate_matrix = np.array(
+            [[[-1., 1./3, 1./3, 1./3], 
+            [1./3, -1, 1./3, 1./3], 
+            [1./3, 1./3, -1, 1./3], 
+            [1./3, 1./3, 1./3, -1]]], 
+            dtype=util.default_dtype
+        )
+        root = np.eye(4, dtype=util.default_dtype)[np.newaxis, np.newaxis]
+        dist = model.propagate(root, tree, rate_matrix, tree.branch_lengths)
+        mue = 4./3
+        t = tree.branch_lengths[:,0]
+        for i in range(4):
+            pii = 1./4 + 3./4 * np.exp(-mue*t[i])
+            pij = 1./4 - 1./4 * np.exp(-mue*t[i])
+            ref = np.eye(4) * pii + (1-np.eye(4)) * pij
+            np.testing.assert_almost_equal(dist[i,0], ref)
+
+
+
 class TestModelPytorch(TestModelTF):
     
     def setUp(self):

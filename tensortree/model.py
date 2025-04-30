@@ -22,6 +22,7 @@ def traverse_branches(inputs, rate_matrix, branch_lengths, transposed=False, log
     U = backend.traverse_branch(inputs, P, transposed, logarithmic=logarithmic)
     return U
 
+
 def compute_ancestral_probabilities(leaves,
                                     tree_handler : TreeHandler, 
                                     rate_matrix, 
@@ -89,7 +90,6 @@ def compute_ancestral_probabilities(leaves,
     return backend.probs_from_logits(anc_logliks) if return_probabilities else anc_logliks
 
 
-
 def loglik(leaves, 
            tree_handler : TreeHandler, 
            rate_matrix, 
@@ -129,6 +129,50 @@ def loglik(leaves,
         return backend.loglik_from_root_logits(root_logits, equilibrium_logits)
     
 
+def propagate(
+    root,
+    tree_handler : TreeHandler,
+    rate_matrix,
+    branch_lengths
+):
+    """
+    Propagates a root distribution along the tree topology. The method computes 
+    P(u | root, tree) for all nodes u in the tree.
+
+    Args:
+        root: Probabilities of all symbols at the root node of shape 
+            (1, models, L, d).
+        tree_handler: TreeHandler object
+        rate_matrix: Rate matrix of shape (models, d, d)
+        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+    """
+    
+    assert tree_handler.height > 0, "Tree must have at least one internal node."
+
+    dist, cur_dist = root, root
+
+    for height in range(tree_handler.height-1, -1, -1):
+
+        # traverse all edges (parent(X), X) for all nodes X of same height in parallel
+        U = traverse_branches(
+            cur_dist, 
+            rate_matrix, 
+            tree_handler.get_values_by_height(branch_lengths, height),
+            transposed=True,
+            logarithmic=False
+        )
+        dist = backend.concat([U, dist], axis=0)
+
+        if height > 0:
+            # compute downward messages
+            parent_indices = tree_handler.get_parent_indices_by_height(height-1)
+            cur_dist = backend.gather(
+                dist, parent_indices-tree_handler.cum_layer_sizes[height-1]
+            )
+    
+    return dist
+
+    
 
 def compute_ancestral_marginals(leaves,
                                 tree_handler : TreeHandler, 
@@ -256,7 +300,6 @@ def compute_ancestral_marginals(leaves,
         results = [backend.probs_from_logits(x) for x in results]
 
     return tuple(results) if len(results) > 1 else results[0]
-
 
 
 def compute_leaf_out_marginals(leaves,
