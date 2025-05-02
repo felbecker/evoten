@@ -4,55 +4,32 @@ from tensortree.tree_handler import TreeHandler
 from tensortree.util import backend
 
 
-def traverse_branches(
-        inputs, 
-        rate_matrix, 
-        branch_lengths, 
-        transposed=False, 
-        logarithmic=True
-    ):
-    """
-    Traverse n branches (u, inputs) in parallel and compute P(inputs | u).
-    Per default, we assume that u is further in the past than inputs and that 
-    the branch_length > 0 between them indicates evolutionary time.
-
-    Args:
-        inputs: Log-likelihoods of shape (n, models, L, d)
-        branch_lengths: Branch lengths of shape (n, models)
-        rate_matrix: Rate matrix of shape (models, d, d)
-        transposed: If transposed=False, compute P(v | u) (default).
-                    If transposed=True, compute P(u | v).
-    """
-    P = backend.make_transition_probs(rate_matrix, branch_lengths)
-    U = backend.traverse_branch(inputs, P, transposed, logarithmic=logarithmic)
-    return U
-
 
 def compute_ancestral_probabilities(
-        leaves,
-        tree_handler : TreeHandler, 
-        rate_matrix, 
-        branch_lengths, 
-        leaf_names=None,
-        return_only_root = False, 
-        leaves_are_probabilities = True,
-        return_probabilities = False
-    ):
+    leaves,
+    tree_handler : TreeHandler, 
+    transition_probs, 
+    leaf_names=None,
+    return_only_root = False, 
+    leaves_are_probabilities = True,
+    return_probabilities = False
+):
     """
     Computes all (partial) log-likelihoods at all internal (ancestral) nodes u 
     in the given tree, that is P(leaves below u | u, tree) for all u that are 
     not leaves.
-    Supports multiple, parallel models with broadcasting for rates and leaves 
-    in the model dimension. Uses a vectorized implementation of Felsenstein's 
-    pruning algorithm that treats models, sequence positions and all nodes 
-    within a tree layer in parallel.
+    Supports multiple, parallel models. Uses a vectorized implementation of 
+    Felsenstein's pruning algorithm that treats models, sequence positions and 
+    all nodes within a tree layer in parallel.
+
+    * Broadcasting is supported for this dimension.
 
     Args:
         leaves: Logits of all symbols at all leaves of shape 
-            (num_leaves, models, L, d). 
+            (num_leaves, models*, L, d). 
         tree_handler: TreeHandler object
-        rate_matrix: Rate matrix of shape (models, d, d)
-        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        transition_probs: Probabilistic transition matrices of shape 
+            (num_nodes-1, models, L*, d, d).
         leaf_names: Names of the leaves (list-like of length num_leaves). 
             Used to reorder correctly.
         return_only_root: If True, only the root node logliks are returned.
@@ -86,8 +63,8 @@ def compute_ancestral_probabilities(
         
         # traverse all edges (parent(X), X) for all nodes X of same height in 
         # parallel
-        B = tree_handler.get_values_by_height(branch_lengths, height)
-        T = traverse_branches(X, rate_matrix, B)
+        P = tree_handler.get_values_by_height(transition_probs, height)
+        T = backend.traverse_branch(X, P)
 
         # aggregate over child nodes and add to anc_logliks
         parent_indices = tree_handler.get_parent_indices_by_height(height)
@@ -115,8 +92,7 @@ def compute_ancestral_probabilities(
 def loglik(
     leaves, 
     tree_handler : TreeHandler, 
-    rate_matrix, 
-    branch_lengths, 
+    transition_probs, 
     equilibrium_logits, 
     leaf_names=None,
     leaves_are_probabilities=True
@@ -124,12 +100,14 @@ def loglik(
     """
     Computes log P(leaves | tree, rate_matrix).
 
+    * Broadcasting is supported for this dimension.
+
     Args:
         leaves: Logits of all symbols at all leaves of shape 
-            (num_leaves, models, L, d).
+            (num_leaves, models*, L, d). 
         tree_handler: TreeHandler object
-        rate_matrix: Rate matrix of shape (models, d, d)
-        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        transition_probs: Probabilistic transition matrices of shape 
+            (num_nodes-1, models, L*, d, d).
         equilibrium_logits: Equilibrium distribution logits of shape 
             (models, d).
         leaf_names: Names of the leaves (list-like of length num_leaves). 
@@ -149,8 +127,7 @@ def loglik(
         root_logits = compute_ancestral_probabilities(
             leaves, 
             tree_handler, 
-            rate_matrix, 
-            branch_lengths, 
+            transition_probs,
             leaf_names,
             return_only_root = True, 
             leaves_are_probabilities=leaves_are_probabilities, 
@@ -162,19 +139,20 @@ def loglik(
 def propagate(
     root,
     tree_handler : TreeHandler,
-    rate_matrix,
-    branch_lengths
+    transition_probs
 ):
     """
     Propagates a root distribution along the tree topology. The method computes 
     P(u | root, tree) for all nodes u in the tree.
 
+    * Broadcasting is supported for this dimension.
+
     Args:
         root: Probabilities of all symbols at the root node of shape 
-            (1, models, L, d).
+            (1, models*, L, d).
         tree_handler: TreeHandler object
-        rate_matrix: Rate matrix of shape (models, d, d)
-        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        transition_probs: Probabilistic transition matrices of shape 
+            (num_nodes-1, models, L*, d, d).
     """
     
     assert tree_handler.height > 0, "Tree must have at least one internal node."
@@ -185,12 +163,9 @@ def propagate(
 
         # traverse all edges (parent(X), X) for all nodes X of same height in 
         # parallel
-        U = traverse_branches(
-            cur_dist, 
-            rate_matrix, 
-            tree_handler.get_values_by_height(branch_lengths, height),
-            transposed=True,
-            logarithmic=False
+        P = tree_handler.get_values_by_height(transition_probs, height)
+        U = backend.traverse_branch(
+            cur_dist, P, transposed=True, logarithmic=False
         )
         dist = backend.concat([U, dist], axis=0)
 
@@ -208,8 +183,7 @@ def propagate(
 def compute_ancestral_marginals(
     leaves,
     tree_handler : TreeHandler, 
-    rate_matrix, 
-    branch_lengths, 
+    transition_probs,
     equilibrium_logits, 
     leaf_names=None,
     leaves_are_probabilities = True,
@@ -222,12 +196,14 @@ def compute_ancestral_marginals(
     given leave data and the tree. Formally, the method computes
     sP(u | leaves, tree) for all u that are not leaves.
 
+    * Broadcasting is supported for this dimension.
+
     Args:
         leaves: Logits of all symbols at all leaves of shape 
-            (num_leaves, models, L, d).
+            (num_leaves, models*, L, d).
         tree_handler: TreeHandler object
-        rate_matrix: Rate matrix of shape (models, d, d)
-        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        transition_probs: Probabilistic transition matrices of shape 
+            (num_nodes-1, models, L*, d, d).
         equilibrium_logits: Equilibrium distribution logits of shape 
             (models, d).
         leaf_names: Names of the leaves (list-like of length num_leaves). Used 
@@ -248,9 +224,6 @@ def compute_ancestral_marginals(
     
     if leaves_are_probabilities:
         leaves = backend.logits_from_probs(leaves)
-
-    # Precompute the transition matrices, they'll be reused multiple times
-    P_full = backend.make_transition_probs(rate_matrix, branch_lengths) 
 
     # throughout the method we compute:
     # beliefs: P(leaves, u | tree) for all ancestral nodes u
@@ -275,7 +248,7 @@ def compute_ancestral_marginals(
 
         # traverse upwards all edges (parent(u), u) for all nodes u of same 
         # height
-        P = tree_handler.get_values_by_height(P_full, height)
+        P = tree_handler.get_values_by_height(transition_probs, height)
         M = backend.traverse_branch(X, P) 
         upward_messages.append(M)
 
@@ -318,7 +291,7 @@ def compute_ancestral_marginals(
     for height in range(tree_handler.height-1, 0, -1):
 
         # compute updates for the beliefs 
-        P = tree_handler.get_values_by_height(P_full, height)
+        P = tree_handler.get_values_by_height(transition_probs, height)
         U = backend.traverse_branch(
             downward_messages_by_cur_height, P, transposed=True
         )
@@ -364,8 +337,7 @@ def compute_ancestral_marginals(
 def compute_leaf_out_marginals(
     leaves,
     tree_handler : TreeHandler, 
-    rate_matrix, 
-    branch_lengths, 
+    transition_probs,
     equilibrium_logits, 
     leaf_names=None,
     leaves_are_probabilities = True,
@@ -376,12 +348,14 @@ def compute_leaf_out_marginals(
     the tree topology and the rate matrix. Formally, the method computes 
     P(u | leaves_except_u, tree, rates) for all leaves u.
 
+    * Broadcasting is supported for this dimension.
+
     Args:
         leaves: Logits of all symbols at all leaves of shape 
-            (num_leaves, models, L, d).
+            (num_leaves, models*, L, d).
         tree_handler: TreeHandler object
-        rate_matrix: Rate matrix of shape (models, d, d)
-        branch_lengths: Branch lengths of shape (num_nodes-1, models)
+        transition_probs: Probabilistic transition matrices of shape 
+            (num_nodes-1, models, L*, d, d).
         equilibrium_logits: Equilibrium distribution logits of shape 
             (models, d).
         leaf_names: Names of the leaves (list-like of length num_leaves). Used 
@@ -396,8 +370,7 @@ def compute_leaf_out_marginals(
     _, downward_messages = compute_ancestral_marginals(
         leaves,
         tree_handler, 
-        rate_matrix, 
-        branch_lengths, 
+        transition_probs, 
         equilibrium_logits, 
         leaf_names,
         leaves_are_probabilities=leaves_are_probabilities,
@@ -410,9 +383,7 @@ def compute_leaf_out_marginals(
     downward_messages_to_leaves = downward_messages[:tree_handler.num_leaves]
     
     # compute the transition matrices for all leaf edges
-    P_leaf_edges = backend.make_transition_probs(
-        rate_matrix, branch_lengths[:tree_handler.num_leaves]
-    ) 
+    P_leaf_edges = transition_probs[:tree_handler.num_leaves]
 
     # compute P(u, leaves_except_u | tree, rates)
     leaf_out = backend.traverse_branch(

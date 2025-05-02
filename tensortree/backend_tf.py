@@ -58,7 +58,7 @@ class BackendTF(util.Backend):
     def traverse_branch(
             self, 
             X, 
-            branch_probabilities, 
+            transition_probs, 
             transposed=False, 
             logarithmic=True
         ):
@@ -66,7 +66,21 @@ class BackendTF(util.Backend):
         # unstable
         if logarithmic:
             X = self.probs_from_logits(X)
-        X = tf.matmul(X, branch_probabilities, transpose_b=not transposed)
+
+        
+        if tf.shape(transition_probs)[-3] == 1:
+            # broadcasting  in L is required
+            # it is most efficient to let the matmul op handle this
+            transition_probs = transition_probs[..., 0, :, :]
+            X = tf.matmul(X, transition_probs, transpose_b=not transposed)
+        else:
+            # the user has provided transition matrices for all positions
+            # add a dummy dimension to X for the matmul op
+            X = tf.expand_dims(X, axis=-2)
+            X = tf.matmul(X, transition_probs, transpose_b=not transposed)
+            # strip the dummy dimension
+            X = X[..., 0, :]
+
         if logarithmic:
             X = self.logits_from_probs(X)
         return X

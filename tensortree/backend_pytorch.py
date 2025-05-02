@@ -72,18 +72,18 @@ class BackendTorch(util.Backend):
     def traverse_branch(
             self, 
             X, 
-            branch_probabilities, 
+            transition_probs, 
             transposed=False, 
             logarithmic=True
         ):
         X = _ensure_tensor(X)
-        branch_probabilities = _ensure_tensor(branch_probabilities)
+        transition_probs = _ensure_tensor(transition_probs)
         if logarithmic:
             X = self.probs_from_logits(X)
         if transposed:
-            X = torch.einsum("...kd,...dz->...kz", X, branch_probabilities)
+            X = torch.einsum("...d,...dz->...z", X, transition_probs)
         else:
-            X = torch.einsum("...kd,...zd->...kz", X, branch_probabilities)
+            X = torch.einsum("...d,...zd->...z", X, transition_probs)
         if logarithmic:
             X = self.logits_from_probs(X)
         return X

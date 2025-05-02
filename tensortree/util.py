@@ -24,7 +24,7 @@ class Backend():
         ):
         """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 
         expected mutation per site. Exchangeabilities and equilibrium tensors
-        can have arbitrary leading dimensions for which broadcasting is
+        can have arbitrary leading dimensions for which mutual broadcasting is
         supported. The leading dimensions should match otherwise.
 
         Args:
@@ -101,25 +101,25 @@ class Backend():
     
 
     def traverse_branch(
-            self, X, branch_probabilities, transposed=False, logarithmic=True
+            self, X, transition_probs, transposed=False, logarithmic=True
         ):
         """
         Computes P(X | X') for a branch {X, X'} given the transition matrix.
-        The tensors X and branch_probabilities can have arbitrary leading 
-        dimensions for which broadcasting is supported. The leading dimensions
-        should match otherwise. 
+        The tensors X and transition_probs can have arbitrary leading 
+        dimensions for which mutual broadcasting is supported. The leading 
+        dimensions should match otherwise. 
 
         Args:
-            X: tensor with logits of shape (..., k, d). 
-            branch_probabilities: The transition matrices along each branch. 
+            X: tensor with logits of shape (..., d). 
+            transition_probs: The transition matrices along each branch. 
                 Tensor of shape (..., d, d). 
             transposed: If True, computes P(X' | X) instead.
             
         Returns:
-            logits of shape (..., k, d)
+            logits of shape (..., d)
         """
         return self.wrapped_backend.traverse_branch(
-            X, branch_probabilities, transposed, logarithmic
+            X, transition_probs, transposed, logarithmic
         )
     
 
@@ -145,8 +145,8 @@ class Backend():
         """
         Computes log likelihoods given root logits and equilibrium distributions.
         The tensors root_logits and equilibrium_logits can have arbitrary leading
-        dimensions for which broadcasting is supported. The leading dimensions
-        should match otherwise.
+        dimensions for which mutual broadcasting is supported. The leading 
+        dimensions should match otherwise.
 
         Args:
             root_logits: Logits at the root node of shape (..., d)
