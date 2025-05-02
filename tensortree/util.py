@@ -23,17 +23,19 @@ class Backend():
             normalized=True
         ):
         """Constructs a stack of normalized rate matrices, i.e. 1 time unit = 1 
-        expected mutation per site.
+        expected mutation per site. Exchangeabilities and equilibrium tensors
+        can have arbitrary leading dimensions for which broadcasting is
+        supported. The leading dimensions should match otherwise.
 
         Args:
             exchangeabilities: Symmetric, positive-semidefinite exchangeability 
-                matrices with zero diagonal. Shape: (k, d, d) 
-            equilibrium: A vector of relative frequencies. Shape: (k, d) 
+                matrices with zero diagonal. Shape: (..., d, d) 
+            equilibrium: A vector of relative frequencies. Shape: (..., d) 
             epsilon: Small value to avoid division by zero.
             normalized: If True, the rate matrices are normalized.
 
         Returns:
-            Normalized rate matrices. Output shape: (k, d, d) 
+            Normalized rate matrices. Output shape: (..., d, d) 
         """
         return self.wrapped_backend.make_rate_matrix(
             exchangeabilities, equilibrium, epsilon, normalized
@@ -42,14 +44,16 @@ class Backend():
     
     def make_transition_probs(self, rate_matrix, distances):
         """Constructs a probability matrix of mutating or copying one an input
-        to another over a given amount of evolutionary time.
+        to another over a given amount of evolutionary time. The rate matrix and
+        distance tensor can have arbitrary leading dimensions for which 
+        broadcasting is supported. The leading dimensions should match otherwise.
         
         Args:
-            rate_matrix: Rate matrix of shape (k, d, d).
-            distances: Evolutionary times of shape (n, k) 
+            rate_matrix: Rate matrix of shape (..., d, d).
+            distances: Evolutionary times of shape (...) 
         
         Returns:
-            Stack of probability matrices of shape (n, k, d, d)
+            Stack of probability matrices of shape (..., d, d)
         """
         return self.wrapped_backend.make_transition_probs(
             rate_matrix, distances
@@ -59,6 +63,12 @@ class Backend():
     def make_branch_lengths(self, kernel):
         """
         Converts a kernel of parameters to positive branch lengths.
+
+        Args:
+            kernel: Tensor of any shape.
+        
+        Returns:
+            Tensor of the same shape with positive values.	
         """
         return self.wrapped_backend.make_branch_lengths(kernel)
     
@@ -70,7 +80,10 @@ class Backend():
         Note: Uses an overparameterized d x d kernel for speed of computation.
 
         Args:
-            kernel: Tensor of shape (k, d, d).
+            kernel: Tensor of shape (..., d, d).
+
+        Returns:
+            Symmetric, positive-semidefinite matrices of shape (..., d, d).
         """
         return self.wrapped_backend.make_symmetric_pos_semidefinite(kernel)
     
@@ -92,15 +105,18 @@ class Backend():
         ):
         """
         Computes P(X | X') for a branch {X, X'} given the transition matrix.
+        The tensors X and branch_probabilities can have arbitrary leading 
+        dimensions for which broadcasting is supported. The leading dimensions
+        should match otherwise. 
 
         Args:
-            X: tensor with logits of shape (n, k, L, d). 
+            X: tensor with logits of shape (..., k, d). 
             branch_probabilities: The transition matrices along each branch. 
-            Tensor of shape (n, k, d, d). 
+                Tensor of shape (..., d, d). 
             transposed: If True, computes P(X' | X) instead.
             
         Returns:
-            logits of shape (n, k, L, d)
+            logits of shape (..., k, d)
         """
         return self.wrapped_backend.traverse_branch(
             X, branch_probabilities, transposed, logarithmic
@@ -128,10 +144,13 @@ class Backend():
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
         """
         Computes log likelihoods given root logits and equilibrium distributions.
+        The tensors root_logits and equilibrium_logits can have arbitrary leading
+        dimensions for which broadcasting is supported. The leading dimensions
+        should match otherwise.
 
         Args:
-            root_logits: Logits at the root node of shape (k, L, d)
-            equilibrium_logits: Equilibrium distribution logits of shape (k, d)
+            root_logits: Logits at the root node of shape (..., d)
+            equilibrium_logits: Equilibrium distribution logits of shape (..., d)
 
         Returns:
             Log-likelihoods of shape (k, L)
@@ -146,12 +165,12 @@ class Backend():
         Computes marginal distributions log P(u) from beliefs log P(u, data).
 
         Args:
-            beliefs: Logits of shape (n, k, L, d)
+            beliefs: Logits of shape (..., d)
             same_loglik: If True, the likelihoods are assumed to be identical 
-                for all n nodes.
+                for all inputs.
 
         Returns:
-            Marginal distributions of shape (n, k, L, d)
+            Marginal distributions of shape (..., d)
         """
         return self.wrapped_backend.marginals_from_beliefs(beliefs, same_loglik)
     

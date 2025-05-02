@@ -18,11 +18,9 @@ class BackendTF(util.Backend):
             epsilon=1e-16, 
             normalized=True
         ):
-        Q = exchangeabilities *  tf.expand_dims(equilibrium, 1)
+        Q = exchangeabilities * tf.expand_dims(equilibrium, -2)
         diag = tf.reduce_sum(Q, axis=-1, keepdims=True)
-        eye = tf.eye(
-            tf.shape(diag)[1], batch_shape=tf.shape(diag)[:1], dtype=diag.dtype
-        )
+        eye = tf.eye(tf.shape(diag)[-2], dtype=diag.dtype)
         Q -= diag * eye
         # normalize
         if normalized:
@@ -33,12 +31,10 @@ class BackendTF(util.Backend):
 
 
     def make_transition_probs(self, rate_matrix, distances):
-        rate_matrix = tf.expand_dims(rate_matrix, 0)
         distances = tf.expand_dims(tf.expand_dims(distances, -1), -1)
         # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
         P = tf.linalg.expm(rate_matrix * distances) 
         return P
-
 
 
     def make_branch_lengths(self, kernel):
@@ -46,9 +42,12 @@ class BackendTF(util.Backend):
 
 
     def make_symmetric_pos_semidefinite(self, kernel):
+        kernel_shape = tf.shape(kernel)
+        kernel = tf.reshape(kernel, (-1, kernel_shape[-2], kernel_shape[-1]))
         R = 0.5 * (kernel + tf.transpose(kernel, [0,2,1])) #make symmetric
         R = tf.math.softplus(R)
         R -= tf.linalg.diag(tf.linalg.diag_part(R)) #zero diagonal
+        R = tf.reshape(R, kernel_shape)
         return R
 
 
@@ -63,22 +62,13 @@ class BackendTF(util.Backend):
             transposed=False, 
             logarithmic=True
         ):
-        if True:
-            # fast matmul version, but requires conversion, might be numerically 
-            # unstable
-            if logarithmic:
-                X = self.probs_from_logits(X)
-            X = tf.matmul(X, branch_probabilities, transpose_b=not transposed)
-            if logarithmic:
-                X = self.logits_from_probs(X)
-        else:
-            if not logarithmic:
-                raise ValueError("Non-logarithmic traversal is not supported.")
-            # slower (no matmul) but more stable? 
-            X = tf.math.reduce_logsumexp(
-                X[..., tf.newaxis, :] + tf.math.log(branch_probabilities[:,:,tf.newaxis]), 
-                axis=-1
-            )
+        # fast matmul version, but requires conversion, might be numerically 
+        # unstable
+        if logarithmic:
+            X = self.probs_from_logits(X)
+        X = tf.matmul(X, branch_probabilities, transpose_b=not transposed)
+        if logarithmic:
+            X = self.logits_from_probs(X)
         return X
 
 
@@ -88,7 +78,7 @@ class BackendTF(util.Backend):
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
         return tf.math.reduce_logsumexp(
-            root_logits + equilibrium_logits[:,tf.newaxis], axis=-1
+            root_logits + equilibrium_logits, axis=-1
         )
     
 

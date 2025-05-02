@@ -27,9 +27,9 @@ class BackendTorch(util.Backend):
         ):
         exchangeabilities = _ensure_tensor(exchangeabilities)
         equilibrium = _ensure_tensor(equilibrium)
-        Q = torch.mul(exchangeabilities, equilibrium[:,None])
+        Q = torch.mul(exchangeabilities, equilibrium[..., None, :])
         diag = torch.sum(Q, -1, True)
-        eye = torch.eye(diag.shape[1], dtype=diag.dtype, device=diag.device)
+        eye = torch.eye(diag.shape[-2], dtype=diag.dtype, device=diag.device)
         eye = eye[None]
         eye = eye.repeat(diag.shape[0], 1, 1)
         Q -= diag * eye
@@ -44,7 +44,6 @@ class BackendTorch(util.Backend):
     def make_transition_probs(self, rate_matrix, distances):
         rate_matrix = _ensure_tensor(rate_matrix)
         distances = _ensure_tensor(distances)
-        rate_matrix = rate_matrix[None]
         distances = distances[..., None, None]
         # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
         P = torch.linalg.matrix_exp(rate_matrix * distances) 
@@ -57,9 +56,12 @@ class BackendTorch(util.Backend):
 
 
     def make_symmetric_pos_semidefinite(self, kernel):
+        kernel_shape = kernel.shape
+        kernel = kernel.view(-1, kernel_shape[-2], kernel_shape[-1])
         R = 0.5 * (kernel + kernel.permute((0,2,1))) #make symmetric
         R = torch.nn.functional.softplus(R)
         R -= torch.diag(torch.diagonal(R)) #zero diagonal
+        R = R.view(kernel_shape)
         return R
 
 
@@ -79,9 +81,9 @@ class BackendTorch(util.Backend):
         if logarithmic:
             X = self.probs_from_logits(X)
         if transposed:
-            X = torch.einsum("nkLd,nkdz->nkLz", X, branch_probabilities)
+            X = torch.einsum("...kd,...dz->...kz", X, branch_probabilities)
         else:
-            X = torch.einsum("nkLd,nkzd->nkLz", X, branch_probabilities)
+            X = torch.einsum("...kd,...zd->...kz", X, branch_probabilities)
         if logarithmic:
             X = self.logits_from_probs(X)
         return X
@@ -99,7 +101,7 @@ class BackendTorch(util.Backend):
 
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
-        return torch.logsumexp(root_logits + equilibrium_logits[:,None], dim=-1)
+        return torch.logsumexp(root_logits + equilibrium_logits, dim=-1)
     
 
     def marginals_from_beliefs(self, beliefs, same_loglik=True):
