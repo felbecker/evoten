@@ -410,12 +410,19 @@ def compute_leaf_out_marginals(
     downward_messages_to_leaves = downward_messages[:tree_handler.num_leaves]
     
     # compute the transition matrices for all leaf edges
-    P_leaf_edges = backend.make_transition_probs(rate_matrix, branch_lengths[:tree_handler.num_leaves]) 
+    P_leaf_edges = backend.make_transition_probs(
+        rate_matrix, branch_lengths[:tree_handler.num_leaves]
+    ) 
 
     # compute P(u, leaves_except_u | tree, rates)
-    leaf_out = backend.traverse_branch(downward_messages_to_leaves, P_leaf_edges, transposed=True)
+    leaf_out = backend.traverse_branch(
+        downward_messages_to_leaves, P_leaf_edges, transposed=True
+    )
 
     # compzute P(u | leaves_except_u, tree, rates)
     leaf_out = backend.marginals_from_beliefs(leaf_out, same_loglik=False)
 
-    return backend.probs_from_logits(leaf_out) if return_probabilities else leaf_out
+    if return_probabilities:
+        return backend.probs_from_logits(leaf_out) 
+    else: 
+        return leaf_out
