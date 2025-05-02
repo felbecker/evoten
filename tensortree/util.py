@@ -77,7 +77,13 @@ class Backend():
 
     def make_equilibrium(self, kernel):
         """ Constructs a stack of equilibrium distributions from a parameter kernel.
-        """
+
+        Args:
+            kernel: Tensor of shape (..., d).
+
+        Returns:
+            Equilibrium distributions of shape (..., d).
+        """ 
         return self.wrapped_backend.make_equilibrium(kernel)
     
 
