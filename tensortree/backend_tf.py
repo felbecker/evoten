@@ -68,7 +68,7 @@ class BackendTF(util.Backend):
             X = self.probs_from_logits(X)
 
         
-        if tf.shape(transition_probs)[-3] == 1:
+        if transition_probs.shape[-3] == 1:
             # broadcasting  in L is required
             # it is most efficient to let the matmul op handle this
             transition_probs = transition_probs[..., 0, :, :]
