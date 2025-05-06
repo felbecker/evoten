@@ -49,8 +49,9 @@ def compute_ancestral_probabilities(
 
     # allocate a single chunk of memory for all internal nodes (no concat or 
     # masking required) add results as layers are processed
+    num_models = transition_probs.shape[1]
     anc_logliks = backend.make_zeros(
-        leaves, tree_handler.num_models, tree_handler.num_anc
+        leaves, num_models, tree_handler.num_anc
     )
 
     # reorder the leaves to match the tree handler's internal order
