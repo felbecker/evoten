@@ -110,7 +110,7 @@ def loglik(
         transition_probs: Probabilistic transition matrices of shape 
             (num_nodes-1, models, L*, d, d).
         equilibrium_logits: Equilibrium distribution logits of shape 
-            (models, d).
+            (models, L*, d).
         leaf_names: Names of the leaves (list-like of length num_leaves). 
             Used to reorder correctly.
         leaves_are_probabilities: If True, leaves are assumed to be 

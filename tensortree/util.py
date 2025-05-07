@@ -73,6 +73,20 @@ class Backend():
         return self.wrapped_backend.make_branch_lengths(kernel)
     
 
+    def inverse_softplus(self, branch_lengths):
+        """
+        Computes the inverse of the softplus function. Can be used to initialize
+        kernels for branch lengths or exchangeabilities.
+
+        Args:
+            branch_lengths: Tensor of any shape with positive values.
+        
+        Returns:
+            Tensor of the same shape with values in (-inf, inf).
+        """
+        return self.wrapped_backend.inverse_softplus(branch_lengths)
+    
+
     def make_symmetric_pos_semidefinite(self, kernel):
         """
         Constructs a stack of symmetric, positive-semidefinite matrices with 

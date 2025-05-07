@@ -53,6 +53,15 @@ class BackendTorch(util.Backend):
     def make_branch_lengths(self, kernel):
         kernel = _ensure_tensor(kernel)
         return torch.nn.functional.softplus(kernel)
+    
+
+    def inverse_softplus(self, branch_lengths):
+        epsilon=1e-16
+        # Cast to float64 to prevent overflow of large entries
+        branch_lengths64 = branch_lengths.double()
+        result = torch.log(torch.expm1(branch_lengths64) + epsilon)
+        # Cast back to the original data type of `features`
+        return result.to(branch_lengths.dtype)
 
 
     def make_symmetric_pos_semidefinite(self, kernel):

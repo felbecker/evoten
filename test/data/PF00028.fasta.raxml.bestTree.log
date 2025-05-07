@@ -1,0 +1,35 @@
+IQ-TREE multicore version 2.4.0 for Linux x86 64-bit built Feb  7 2025
+Developed by Bui Quang Minh, Nguyen Lam Tung, Olga Chernomor, Heiko Schmidt,
+Dominik Schrempf, Michael Woodhams, Ly Trong Nhan, Thomas Wong
+
+Host:    powergreif (AVX2, FMA3, 251 GB RAM)
+Command: iqtree2 --alisim ../data/PF00028_gen -m LG -t ../data/PF00028.fasta.raxml.bestTree --indel 0.005,0.005 --indel-size GEO{3},GEO{3} --length 2000 --out-format fasta
+Seed:    16876 (Using SPRNG - Scalable Parallel Random Number Generator)
+Time:    Wed May  7 15:24:50 2025
+Kernel:  AVX+FMA - 1 threads (48 CPU cores detected)
+
+INFO: Insertion-size is generated from Geometric distribution with a mean of 3 and a variance of 6. The variance may be different from the user-defined value (if any) due to the definition of each distribution. 
+INFO: Deletion-size is generated from Geometric distribution with a mean of 3 and a variance of 6. The variance may be different from the user-defined value (if any) due to the definition of each distribution. 
+[Alignment Simulator] Executing
+ - Tree filepath: ../data/PF00028.fasta.raxml.bestTree
+ - Length of output sequences: 2000
+ - Model: LG
+ - Number of output datasets: 1
+ - Number of threads: 1
+SUBSTITUTION PROCESS
+--------------------
+
+Model of substitution: LG
+
+State frequencies: (model)
+
+Model of rate heterogeneity: Uniform
+
+An alignment written to ../data/PF00028_gen.fa
+Unaligned sequences written to ../data/PF00028_gen.unaligned.fa
+Screen log file: ../data/PF00028.fasta.raxml.bestTree.log
+[Alignment Simulator] Done
+Simulation CPU time: 0.028 sec (0h:0m:0s)
+Simulation wall-clock time: 0.029 sec (0h:0m:0s)
+
+Date and Time: Wed May  7 15:24:50 2025
