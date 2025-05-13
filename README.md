@@ -9,5 +9,5 @@ Vectorized computation of tree likelihoods.
 
 ### Minimal example
 
-See [here](https://github.com/felbecker/TensorTree/blob/main/test/benchmark/example.ipynb).
+See [here](https://github.com/felbecker/TensorTree/blob/main/test/example.ipynb).
 
