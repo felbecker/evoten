@@ -19,10 +19,10 @@ def _ensure_tensor(x):
 class BackendTorch(util.Backend):
 
     def make_rate_matrix(
-            self, 
-            exchangeabilities, 
-            equilibrium, 
-            epsilon=1e-16, 
+            self,
+            exchangeabilities,
+            equilibrium,
+            epsilon=1e-16,
             normalized=True
         ):
         exchangeabilities = _ensure_tensor(exchangeabilities)
@@ -46,14 +46,14 @@ class BackendTorch(util.Backend):
         distances = _ensure_tensor(distances)
         distances = distances[..., None, None]
         # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
-        P = torch.linalg.matrix_exp(rate_matrix * distances) 
+        P = torch.linalg.matrix_exp(rate_matrix * distances)
         return P
 
 
     def make_branch_lengths(self, kernel):
         kernel = _ensure_tensor(kernel)
         return torch.nn.functional.softplus(kernel)
-    
+
 
     def inverse_softplus(self, branch_lengths):
         epsilon=1e-16
@@ -79,20 +79,22 @@ class BackendTorch(util.Backend):
 
 
     def traverse_branch(
-            self, 
-            X, 
-            transition_probs, 
-            transposed=False, 
+            self,
+            X,
+            transition_probs,
+            transposed=False,
             logarithmic=True
         ):
         X = _ensure_tensor(X)
         transition_probs = _ensure_tensor(transition_probs)
         if logarithmic:
             X = self.probs_from_logits(X)
+        if transition_probs.shape[-3] == 1 and len(transition_probs.shape) == 5:
+            transition_probs = transition_probs[..., 0, :, :]
         if transposed:
-            X = torch.einsum("...d,...dz->...z", X, transition_probs)
+            X = torch.einsum("...td,...dz->...tz", X, transition_probs)
         else:
-            X = torch.einsum("...d,...zd->...z", X, transition_probs)
+            X = torch.einsum("...td,...zd->...tz", X, transition_probs)
         if logarithmic:
             X = self.logits_from_probs(X)
         return X
@@ -100,7 +102,6 @@ class BackendTorch(util.Backend):
 
     def aggregate_children_log_probs(self, X, parent_map, num_ancestral):
         parent_map = _ensure_tensor(parent_map).to(X.device)
-        #return tf.math.unsorted_segment_sum(X, parent_map, num_ancestral)
         Y = torch.zeros(
             num_ancestral, *X.shape[1:], dtype=X.dtype, device=X.device
         )
@@ -111,11 +112,11 @@ class BackendTorch(util.Backend):
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
         return torch.logsumexp(root_logits + equilibrium_logits, dim=-1)
-    
+
 
     def marginals_from_beliefs(self, beliefs, same_loglik=True):
-        loglik = torch.logsumexp(beliefs[-1:] if same_loglik else beliefs, 
-                                 dim=-1, 
+        loglik = torch.logsumexp(beliefs[-1:] if same_loglik else beliefs,
+                                 dim=-1,
                                  keepdim=True)
         return beliefs - loglik
 
@@ -146,6 +147,6 @@ class BackendTorch(util.Backend):
 
     def make_zeros(self, leaves, models, num_nodes):
         return torch.zeros(
-            (num_nodes, models, leaves.shape[-2], leaves.shape[-1]), 
+            (num_nodes, models, leaves.shape[-2], leaves.shape[-1]),
             dtype=leaves.dtype, device=leaves.device
         )

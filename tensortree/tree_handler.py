@@ -25,7 +25,7 @@ class TreeHandler():
     height-wise processing of the tree.
 
     Args:
-        tree: Bio.Phylo tree object that will we wrapped by this class. 
+        tree: Bio.Phylo tree object that will we wrapped by this class.
             If None, a tree with only a root node will be created.
         root_name: Name of the root node when creating a new tree.
     """
@@ -42,11 +42,11 @@ class TreeHandler():
 
     @classmethod
     def read(cls, file, fmt="newick"):
-        """ Reads a tree from a file. 
+        """ Reads a tree from a file.
 
         Args:
             filename: handle or filepath
-            fmt: Format of the tree file. Supports all formats supported by 
+            fmt: Format of the tree file. Supports all formats supported by
                 Bio.Phylo.
         """
         bio_tree = Phylo.read(file, fmt)
@@ -59,13 +59,13 @@ class TreeHandler():
 
         Args:
             filename: handle or filepath
-            fmt: Format of the tree file. Supports all formats supported by 
+            fmt: Format of the tree file. Supports all formats supported by
                 Bio.Phylo.
         """
         handle = StringIO(newick_str)
         bio_tree = Phylo.read(handle, "newick")
         return cls(bio_tree)
-    
+
 
     @classmethod
     def copy(cls, tree_handler):
@@ -78,23 +78,23 @@ class TreeHandler():
         handle = StringIO(treedata)
         tree = Phylo.read(handle, "newick")
         return cls(tree, tree_handler.root_name)
-    
+
 
     def get_indices(self, node_names):
         """ Get indices for a list of node names (strings).
         """
         return [self.nodes[name].index for name in node_names]
-    
+
 
     def get_index(self, node_name):
         return self.nodes[node_name].index
-    
+
 
     def set_branch_lengths(self, branch_lengths, update_phylo_tree=True):
         """ Sets the branch lengths of the tree.
 
         Args:
-            branch_lengths: A tensor of shape (num_nodes-1, k) representing the 
+            branch_lengths: A tensor of shape (num_nodes-1, k) representing the
                 branch lengths of each node to its parent.
                             k is the number of models
         """
@@ -110,46 +110,46 @@ class TreeHandler():
 
 
     def get_branch_lengths_by_height(self, height):
-        """ Retrieves a vector with the branch lengths for each node with the 
+        """ Retrieves a vector with the branch lengths for each node with the
         given height.
 
         Args:
             height: Height of the subtree rooted at a node.
         """
         return self.get_values_by_height(self.branch_lengths, height)
-    
+
 
     def get_parent_indices_by_height(self, height):
-        """ Retrieves a vector with the index of the parent for each node in a 
+        """ Retrieves a vector with the index of the parent for each node in a
         height layer."""
         return self.get_values_by_height(self.parent_indices, height)
 
 
     def get_values_by_height(self, kernel, height, leaves_included=True):
-        """ Retrieves all values from the leftmost axis of a tensor 
+        """ Retrieves all values from the leftmost axis of a tensor
         corresponding to all nodes with a given height.
 
         Args:
-            kernel: A tensor of shape (num_nodes-1, ...) or (num_nodes, ...) 
+            kernel: A tensor of shape (num_nodes-1, ...) or (num_nodes, ...)
                 (root last; might be excluded),
-            representing all branch lengths ordered by tree height and 
+            representing all branch lengths ordered by tree height and
                 left-to-right (starting with leaves).
             height: Height of the subtree rooted at a node.
-            leaves_included: If False, the method will assume a kernel if shape 
+            leaves_included: If False, the method will assume a kernel if shape
                 (num_nodes-num_leaves, ...) and height=0 is invalid.
 
         Returns:
-            Tensor of shape (layer_size, ...) representing the branch lengths 
+            Tensor of shape (layer_size, ...) representing the branch lengths
             for the tree layer.
         """
-        k = self.cum_layer_sizes[height] 
+        k = self.cum_layer_sizes[height]
         s = self.layer_sizes[height]
         n = int(not leaves_included) * self.layer_sizes[0]
         return kernel[k-s-n:k-n]
 
 
-    def get_leaf_counts_by_height(self, height):    
-        r""" Retrieves a vector with the number of child nodes that are leafs 
+    def get_leaf_counts_by_height(self, height):
+        r""" Retrieves a vector with the number of child nodes that are leafs
         for each node in the given layer.
 
             Example:
@@ -167,10 +167,10 @@ class TreeHandler():
             height: Height of the subtree rooted at a node.
         """
         return self.get_values_by_height(self.leaf_counts, height)
-    
+
 
     def get_internal_counts_by_height(self, height):
-        r""" Retrieves a vector with the number of child nodes that are 
+        r""" Retrieves a vector with the number of child nodes that are
         internal for each node in the given layer.
 
             Example:
@@ -188,27 +188,27 @@ class TreeHandler():
             height: Height of the subtree rooted at a node.
         """
         return self.get_values_by_height(self.internal_counts, height)
-    
+
 
     def reorder(self, tensor, node_names, axis=0):
         """ Reorders the tensor along the given axis to be sorted in a way
-            compatible with the tree. 
-            This method is meant to be statically compiled in the compute graph 
+            compatible with the tree.
+            This method is meant to be statically compiled in the compute graph
             (leaf order is always the same).
 
         Args:
             tensor: A tensor of shape (..., k, ...).
-            node_names: List-like of k node names in the order as they appear 
+            node_names: List-like of k node names in the order as they appear
                 in the tensor.
             axis: The axis along which the tensor should be reordered.
         """
         permutation = np.argsort(self.get_indices(node_names))
         return backend.gather(tensor, permutation, 0)
-    
+
 
     def update(
-            self, 
-            unnamed_node_keyword="tensortree_node", 
+            self,
+            unnamed_node_keyword="tensortree_node",
             force_reset_init_lengths=False
         ):
         """ Initializes or updates utility datastructures for the tree.
@@ -234,7 +234,7 @@ class TreeHandler():
         for clade in self.bio_tree.find_clades(order="level"):
             for child in clade:
                 self.nodes[child.name] = NodeData(child, parent=clade)
-                
+
         self.num_nodes = len(self.nodes)
 
         # map each node to the height of its subtree
@@ -264,7 +264,7 @@ class TreeHandler():
             self.layer_sizes[data.height] += 1
         self.cum_layer_sizes = np.cumsum(self.layer_sizes)
 
-        # compute a unique index for each node  
+        # compute a unique index for each node
         # sorted by height and left-to-right within each layer
         index_struct = [[] for _ in range(self.height+1)]
         for clade in self.bio_tree.find_clades(order="postorder"):
@@ -277,7 +277,7 @@ class TreeHandler():
                 self.node_names.append(node.name)
                 i += 1
 
-        # compute the number of leaf/internal children for each node as well as 
+        # compute the number of leaf/internal children for each node as well as
         # parent indices
         self.leaf_counts = np.zeros(self.num_nodes, dtype=int)
         self.internal_counts = np.zeros(self.num_nodes, dtype=int)
@@ -308,7 +308,7 @@ class TreeHandler():
         """
         self.init_branch_lengths = np.zeros(
             (self.num_nodes-1, 1), dtype=default_dtype
-        ) 
+        )
         for clade in self.bio_tree.find_clades(order="level"):
             for child in clade:
                 L = child.branch_length
@@ -316,14 +316,14 @@ class TreeHandler():
 
 
     def collapse(self, node_name):
-        """ Collapses a node in the tree. Call update() after all tree 
+        """ Collapses a node in the tree. Call update() after all tree
         modifications are done.
         """
         self.collapse_queue.append(self.nodes[node_name].node)
 
 
     def split(self, node_name, n=2, branch_length=1.0, names=None):
-        """ Generates n new descendants for a node. Call update() after all 
+        """ Generates n new descendants for a node. Call update() after all
         tree modifications are done.
         """
         node = self.nodes[node_name].node
@@ -331,26 +331,26 @@ class TreeHandler():
 
 
     def prune(self):
-        """ Prunes the tree by removing all leaves, i.e. strips the lowest 
+        """ Prunes the tree by removing all leaves, i.e. strips the lowest
         height layer.
-            Call update() after all tree modifications are done.   
+            Call update() after all tree modifications are done.
         """
         for node in self.bio_tree.get_terminals():
             self.collapse(node.name)
 
 
     def change_root(self, new_root_name):
-        """ Rotates the tree such that a different node becomes the root. 
+        """ Rotates the tree such that a different node becomes the root.
             Calls update() automatically.
-        Args: 
-            new_root_name: Name of the new root node, can be any internal node 
+        Args:
+            new_root_name: Name of the new root node, can be any internal node
             in the tree.
         """
         self.bio_tree.root_with_outgroup(new_root_name)
         self.root_name = new_root_name
         self.update(force_reset_init_lengths=True)
 
-    
+
     # applies queued modifications to the tree before update
     def _apply_mods(self, unnamed_node_keyword="tensortree_node"):
         mods_applied = len(self.collapse_queue) > 0 or len(self.split_queue) > 0
@@ -366,7 +366,7 @@ class TreeHandler():
                     child.name = name
         self.split_queue.clear()
         return mods_applied
-                
+
 
 
 
@@ -388,12 +388,16 @@ class TreeHandler():
                 clade = self.nodes[name].node
                 clade.name = name
         return handle.getvalue()
-    
 
-    def draw(self, no_labels=False, axes=None):
+
+    def draw(self, no_labels=False, axes=None, do_show=True):
         """ Plots the tree. """
         # Flip branches so deeper clades are displayed at top
-        self.bio_tree.ladderize()  
-        Phylo.draw(self.bio_tree, 
-                   label_func=lambda x: "" if no_labels else x.name,
-                   axes=axes)
+        self.bio_tree.ladderize()
+        result = Phylo.draw(
+            self.bio_tree,
+            label_func=lambda x: "" if no_labels else x.name,
+            axes=axes,
+            do_show=do_show
+        )
+        return result
