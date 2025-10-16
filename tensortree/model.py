@@ -112,7 +112,7 @@ def loglik(
             (num_leaves, models*, L, d).
         tree_handler: TreeHandler object
         transition_probs: Probabilistic transition matrices of shape
-            (num_nodes-1, models, L*, d, d).
+            (num_nodes-1, models, L*, d, d) or (num_nodes-1, models, d, d).
         equilibrium_logits: Equilibrium distribution logits of shape
             (models, L*, d).
         leaf_names: Names of the leaves (list-like of length num_leaves).
