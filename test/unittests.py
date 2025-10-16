@@ -6,6 +6,8 @@ import unittest
 import numpy as np
 import tensorflow as tf
 import torch
+from Bio import SeqIO
+
 from tensortree import model, substitution_models, util
 from tensortree.tree_handler import TreeHandler
 
@@ -487,6 +489,33 @@ class TestModelTF(unittest.TestCase):
         )
         self.assertEqual(L.shape, (1,3))
         np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4))
+
+    
+    def test_likelihood_simple4(self):
+        
+        t =TreeHandler.read("test/data/simple4.tree")
+        seqs = []
+
+        for record in SeqIO.parse("test/data/seq-gen.out", "fasta"):
+            seqs.append(str(record.seq))
+
+        leaves = util.encode_one_hot(seqs, alphabet="ACGT")
+        leaves = leaves[:, np.newaxis]
+
+        #rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
+        R, pi = substitution_models.jukes_cantor(d = 4)
+        Q = model.backend.make_rate_matrix(R, pi)
+        B = np.ones_like(t.branch_lengths)
+
+        transition_probs = model.backend.make_transition_probs(Q, B)
+        L = model.loglik(
+            leaves,
+            t,
+            transition_probs,
+            equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]).astype(util.default_dtype),
+            )
+        #self.assertEqual(L.shape, (1,3))
+        #np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4))
 
 
     def test_anc_probs_star_unordered_leaves(self):
