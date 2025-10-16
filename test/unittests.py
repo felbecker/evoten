@@ -8,8 +8,8 @@ import tensorflow as tf
 import torch
 from Bio import SeqIO
 
-from tensortree import model, substitution_models, util
-from tensortree.tree_handler import TreeHandler
+from evoten import model, substitution_models, util
+from evoten.tree_handler import TreeHandler
 
 
 class TestTree(unittest.TestCase):
@@ -18,7 +18,7 @@ class TestTree(unittest.TestCase):
         util.set_backend("tensorflow")
 
     def test_indices(self):
-        # tensortree sorts nodes by height and left to right within a layer
+        # evotensorts nodes by height and left to right within a layer
         ind = TreeHandler.read("test/data/simple.tree").get_indices(
             ['A', 'B', 'C', 'D']
         )
@@ -382,38 +382,38 @@ class TestBackend():
 class TestBackendTF(unittest.TestCase, TestBackend):
 
     def test_branch_lengths(self):
-        from tensortree.backend_tf import BackendTF
+        from evoten.backend_tf import BackendTF
         self._test_branch_lengths(BackendTF())
 
     def test_rate_matrix(self):
-        from tensortree.backend_tf import BackendTF
+        from evoten.backend_tf import BackendTF
         self._test_rate_matrix(BackendTF())
 
     def test_LG_rate_matrix(self):
-        from tensortree.backend_tf import BackendTF
+        from evoten.backend_tf import BackendTF
         self._test_LG_rate_matrix(BackendTF())
 
     def test_transition_probs(self):
-        from tensortree.backend_tf import BackendTF
+        from evoten.backend_tf import BackendTF
         self._test_transition_probs(BackendTF())
 
 
 class TestBackendPytorch(unittest.TestCase, TestBackend):
 
     def test_branch_lengths(self):
-        from tensortree.backend_pytorch import BackendTorch
+        from evoten.backend_pytorch import BackendTorch
         self._test_branch_lengths(BackendTorch(), decode=True)
 
     def test_rate_matrix(self):
-        from tensortree.backend_pytorch import BackendTorch
+        from evoten.backend_pytorch import BackendTorch
         self._test_rate_matrix(BackendTorch(), decode=True)
 
     def test_LG_rate_matrix(self):
-        from tensortree.backend_pytorch import BackendTorch
+        from evoten.backend_pytorch import BackendTorch
         self._test_LG_rate_matrix(BackendTorch())
 
     def test_transition_probs(self):
-        from tensortree.backend_pytorch import BackendTorch
+        from evoten.backend_pytorch import BackendTorch
         self._test_transition_probs(BackendTorch(), decode=True)
 
 

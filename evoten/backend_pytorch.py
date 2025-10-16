@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from Bio.Phylo import BaseTree
 
-from tensortree import util
+from evoten import util
 
 
 def _ensure_tensor(x):

@@ -1,6 +1,6 @@
 import numpy as np
 
-from tensortree import util
+from evoten import util
 
 
 def jukes_cantor(mue=4./3, d=4, dtype=util.default_dtype):

@@ -238,10 +238,10 @@ def set_backend(backend_name = "tensorflow"):
     """
     _validate_backend(backend_name)
     if backend_name == "tensorflow":
-        from tensortree.backend_tf import BackendTF 
+        from evoten.backend_tf import BackendTF 
         backend.wrapped_backend = BackendTF()
     elif backend_name == "pytorch":
-        from tensortree.backend_pytorch import BackendTorch 
+        from evoten.backend_pytorch import BackendTorch 
         backend.wrapped_backend = BackendTorch()
     
 
@@ -256,7 +256,7 @@ def _validate_backend(backend):
 class NullBackend(Backend):
     def __getattr__(self, name):
         raise ValueError("No backend loaded. Please call "\
-                         "tensortree.set_backend(<name>) first." 
+                         "evoten.set_backend(<name>) first." 
                          + f"Supported backends are: {supported_backends}.")
 
 

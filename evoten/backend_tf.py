@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 from Bio.Phylo import BaseTree
 
-from tensortree import util
+from evoten import util
 
 
 # Documentation in the base class. Hover over the method name to see the

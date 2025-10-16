@@ -6,7 +6,7 @@ from io import StringIO
 import numpy as np
 from Bio import Phylo
 
-from tensortree.util import backend, default_dtype
+from evoten.util import backend, default_dtype
 
 
 @dataclass
@@ -208,7 +208,7 @@ class TreeHandler():
 
     def update(
             self,
-            unnamed_node_keyword="tensortree_node",
+            unnamed_node_keyword="evoten._node",
             force_reset_init_lengths=False
         ):
         """ Initializes or updates utility datastructures for the tree.
@@ -352,7 +352,7 @@ class TreeHandler():
 
 
     # applies queued modifications to the tree before update
-    def _apply_mods(self, unnamed_node_keyword="tensortree_node"):
+    def _apply_mods(self, unnamed_node_keyword="evoten._node"):
         mods_applied = len(self.collapse_queue) > 0 or len(self.split_queue) > 0
         # collapse
         for node in self.collapse_queue:

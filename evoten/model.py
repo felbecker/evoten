@@ -1,7 +1,7 @@
 import numpy as np
 
-from tensortree.tree_handler import TreeHandler
-from tensortree.util import backend
+from evoten.tree_handler import TreeHandler
+from evoten.util import backend
 
 
 

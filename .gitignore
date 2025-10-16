@@ -1,2 +1,9 @@
 __pycache__
 dist
+
+# VS Code
+.vscode/
+hidten.code-workspace
+
+# Sphinx documentation
+docs/_build/
