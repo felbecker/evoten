@@ -217,6 +217,13 @@ class Backend():
         return self.wrapped_backend.concat(tensors, axis)
 
 
+    def expand(self, X, axis):
+        """
+        Adds a dimension of size 1 at the given axis.
+        """
+        return self.wrapped_backend.expand(X, axis)
+
+
     def make_zeros(self, leaves, models, num_nodes):
         """
         Initializes the ancestral logits tensor with zeros.

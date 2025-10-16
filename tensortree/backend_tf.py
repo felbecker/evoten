@@ -65,12 +65,12 @@ class BackendTF(util.Backend):
 
 
     def traverse_branch(
-            self,
-            X,
-            transition_probs,
-            transposed=False,
-            logarithmic=True
-        ):
+        self,
+        X,
+        transition_probs,
+        transposed=False,
+        logarithmic=True
+    ):
         # fast matmul version, but requires conversion, might be numerically
         # unstable
         if logarithmic:
@@ -133,6 +133,10 @@ class BackendTF(util.Backend):
 
     def concat(self, tensors, axis=0):
         return tf.concat(tensors, axis=axis)
+
+
+    def expand(self, X, axis):
+        return tf.expand_dims(X, axis)
 
 
     def make_zeros(self, leaves, models, num_nodes):

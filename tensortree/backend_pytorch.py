@@ -145,6 +145,11 @@ class BackendTorch(util.Backend):
         return torch.cat(tensors, axis=axis)
 
 
+    def expand(self, X, axis):
+        X = _ensure_tensor(X)
+        return torch.unsqueeze(X, axis)
+
+
     def make_zeros(self, leaves, models, num_nodes):
         return torch.zeros(
             (num_nodes, models, leaves.shape[-2], leaves.shape[-1]),

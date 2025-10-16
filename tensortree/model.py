@@ -29,7 +29,7 @@ def compute_ancestral_probabilities(
             (num_leaves, models*, L, d).
         tree_handler: TreeHandler object
         transition_probs: Probabilistic transition matrices of shape
-            (num_nodes-1, models, L*, d, d).
+            (num_nodes-1, models, L*, d, d) or (num_nodes-1, models, d, d).
         leaf_names: Names of the leaves (list-like of length num_leaves).
             Used to reorder correctly.
         return_only_root: If True, only the root node logliks are returned.
@@ -46,6 +46,10 @@ def compute_ancestral_probabilities(
 
     if leaves_are_probabilities:
         leaves = backend.logits_from_probs(leaves)
+
+    # Make sure transition_probs are 5 dimensional.
+    if len(transition_probs.shape) == 4:
+        transition_probs = backend.expand(transition_probs, axis=-3)
 
     # allocate a single chunk of memory for all internal nodes (no concat or
     # masking required) add results as layers are processed

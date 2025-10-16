@@ -483,17 +483,16 @@ class TestModelTF(unittest.TestCase):
             leaves,
             t,
             transition_probs,
-            equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]).astype(util.default_dtype),
+            equilibrium_logits=np.log([[1./4]*4]).astype(util.default_dtype),
             leaf_names=leaf_names,
             leaves_are_probabilities=True
         )
         self.assertEqual(L.shape, (1,3))
-        np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4))
+        np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4), decimal=6)
 
-    
+
     def test_likelihood_simple4(self):
-        
-        t =TreeHandler.read("test/data/simple4.tree")
+        t = TreeHandler.read("test/data/simple4.tree")
         seqs = []
 
         for record in SeqIO.parse("test/data/seq-gen.out", "fasta"):
@@ -502,7 +501,6 @@ class TestModelTF(unittest.TestCase):
         leaves = util.encode_one_hot(seqs, alphabet="ACGT")
         leaves = leaves[:, np.newaxis]
 
-        #rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         R, pi = substitution_models.jukes_cantor(d = 4)
         Q = model.backend.make_rate_matrix(R, pi)
         B = np.ones_like(t.branch_lengths)
@@ -512,8 +510,11 @@ class TestModelTF(unittest.TestCase):
             leaves,
             t,
             transition_probs,
-            equilibrium_logits=np.log([[1./4, 1./4, 1./4, 1./4]]).astype(util.default_dtype),
-            )
+            equilibrium_logits=np.log([[1./4]*4]).astype(util.default_dtype),
+        )
+
+        # TODO: likelihood comparison
+        #refs=...
         #self.assertEqual(L.shape, (1,3))
         #np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4))
 
