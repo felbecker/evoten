@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tensortree"
+name = "evoten"
 version = "0.0.1"
 authors = [
   { name="Felix Becker", email="beckerfelix94@gmail.com" },
@@ -31,3 +31,6 @@ docs = [
 [project.urls]
 Homepage = "https://github.com/felbecker/TensorTree"
 Issues = "https://github.com/felbecker/TensorTree/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["evoten"]
