@@ -1,5 +1,7 @@
 # evoten
 
+Find the documentation [here](https://felbecker.github.io/evoten/).
+
 Vectorized computation of tree likelihoods.
 
 ### Features
@@ -27,5 +29,6 @@ pip install -e .[tensorflow,torch,docs]
 ### Minimal example
 
 See [here](https://github.com/felbecker/TensorTree/blob/main/test/example.ipynb).
+
 
 
