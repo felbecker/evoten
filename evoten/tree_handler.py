@@ -161,7 +161,7 @@ class TreeHandler():
             D E F G H I
             |       | |
             x       y z
-            and height=1, the function will return [1,0,2].
+            and height=1, the function will return [1, 1, 1, 1].
 
         Args:
             height: Height of the subtree rooted at a node.
@@ -182,7 +182,7 @@ class TreeHandler():
             D E F G H I
             |       | |
             x       y z
-            and height=1, the function will return [1,2,1].
+            and height=2, the function will return [1,2].
 
         Args:
             height: Height of the subtree rooted at a node.
