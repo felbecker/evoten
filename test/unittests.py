@@ -1082,6 +1082,157 @@ class TestSubstitutionModels(unittest.TestCase):
         _check_if_sums_to_one(self, pi)
 
 
+import evoten.util
+
+
+class EvotenModel(tf.keras.Model):
+    """Optimizes the parameters (but not the topology) of a tree."""
+
+    def __init__(
+        self,
+        tree_handler : evoten.TreeHandler,
+        exchangeability_matrix : np.ndarray,
+        branch_lengths : np.ndarray,
+        equilibrium_frequencies : np.ndarray,
+        train_rate_matrix : bool = False,
+        train_branch_lengths : bool = True,
+        train_equilibrium_frequencies : bool = False,
+        leaf_names : list = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.branch_lengths = branch_lengths.astype(np.float32)
+        self.branch_lengths_init = evoten.backend.inverse_softplus(
+            self.branch_lengths
+        ).numpy()
+        self.exchangeability_matrix = exchangeability_matrix.astype(np.float32)
+        self.exchangeability_matrix_init = (
+            evoten.backend.inverse_softplus(
+                self.exchangeability_matrix
+            ).numpy()
+        )
+        self.equilibrium_frequencies = equilibrium_frequencies.astype(np.float32)
+        self.equilibrium_frequencies_init = tf.math.log(
+                self.equilibrium_frequencies
+        ).numpy()
+        self.tree_handler = tree_handler
+        self.train_rate_matrix = train_rate_matrix
+        self.train_branch_lengths = train_branch_lengths
+        self.train_equilibrium_frequencies = train_equilibrium_frequencies
+        self.leaf_names = leaf_names
+
+    def build(self, input_shape=None):
+        # [num_leaves, num_models, seq_length]
+        self.branch_lengths_kernel = self.add_weight(
+            shape=self.branch_lengths.shape,
+            initializer=tf.constant_initializer(self.branch_lengths_init),
+            trainable=self.train_branch_lengths,
+            name="branch_lengths_kernel",
+        )
+        # [num_leaves, num_models, seq_length, d, d]
+        self.exchangeability_matrix_kernel = self.add_weight(
+            shape=self.exchangeability_matrix.shape,
+            initializer=tf.constant_initializer(self.exchangeability_matrix_init),
+            trainable=self.train_rate_matrix,
+            name="exchangeability_matrix_kernel",
+        )
+        # [num_models, d]
+        self.equilibrium_frequencies_kernel = self.add_weight(
+            shape=self.equilibrium_frequencies.shape,
+            initializer=tf.constant_initializer(self.equilibrium_frequencies_init),
+            trainable=self.train_equilibrium_frequencies,
+            name="equilibrium_frequencies_kernel",
+        )
+        self.built = True
+
+    def make_branch_lengths(self):
+        return evoten.backend.make_branch_lengths(
+            self.branch_lengths_kernel
+        )
+
+    def make_equilibrium_frequencies(self):
+        return evoten.backend.make_equilibrium(
+            self.equilibrium_frequencies_kernel
+        )
+
+    def make_exchangeability_matrix(self):
+        return evoten.backend.make_symmetric_pos_semidefinite(
+            self.exchangeability_matrix_kernel
+        )
+
+    def make_rate_matrix(self):
+        return evoten.backend.make_rate_matrix(
+            self.make_exchangeability_matrix(),
+            self.make_equilibrium_frequencies(),
+        )
+
+    def loglik(self, inputs):
+        # inputs: [num_leaves, num_models, seq_length, num_features]
+        # outputs: [num_models, seq_length]
+        transition_probs = evoten.backend.make_transition_probs(
+            self.make_rate_matrix(),
+            self.make_branch_lengths(),
+        )
+        return evoten.model.loglik(
+            inputs,
+            self.tree_handler,
+            transition_probs,
+            self.equilibrium_frequencies_kernel,
+            leaf_names=self.leaf_names
+        )
+
+    def call(self, inputs):
+        # inputs: [num_leaves, num_models, seq_length, num_features]
+        # outputs: [num_models, seq_length]
+        return self.loglik(inputs)
+
+    def compute_loss(self, x, y, y_pred, sample_weight):
+        # average over models and sum over length
+        y_pred = tf.reduce_mean(y_pred, axis=0)
+        y_pred = tf.reduce_sum(y_pred)
+        return -y_pred
+
+class TestKerasModel(unittest.TestCase):
+
+    def setUp(self):
+        util.set_backend("tensorflow")
+
+    def test_jit_compile_model(self):
+        # Load a tree
+        t = TreeHandler.read("test/data/star.tree")
+        t.set_branch_lengths(np.ones((t.num_nodes-1, 1)))
+
+        # Set up leaves of shape (num_leaves, L, models, d)
+        leaves = np.array([[0,2,3], [1,1,0], [2,1,0], [3,1,2]])
+        leaves = np.eye(4, dtype=util.default_dtype)[leaves]
+        leaves = leaves[:,np.newaxis]
+        leaf_names = ['A', 'B', 'C', 'D']
+
+        # Initialize the model
+        R, pi = substitution_models.jukes_cantor(4./3)
+        model = EvotenModel(
+            tree_handler=t,
+            exchangeability_matrix=R[np.newaxis, :, :],
+            branch_lengths=t.branch_lengths[:, np.newaxis],
+            equilibrium_frequencies=pi[np.newaxis, :],
+            train_rate_matrix=True,
+            train_branch_lengths=True,
+            train_equilibrium_frequencies=True,
+            leaf_names=leaf_names
+        )
+        model.build()
+        model.compile(jit_compile=True)
+
+        # Test calling the model
+        _loglik = model(leaves)
+
+        # Test gradient computation
+        model.fit(
+            x=leaves,
+            batch_size=leaves.shape[0],
+            epochs=1,
+            steps_per_epoch=1
+        )
 
 
 
