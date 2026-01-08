@@ -41,7 +41,7 @@ class BackendTorch(util.Backend):
         return Q
 
 
-    def make_transition_probs(self, rate_matrix, distances):
+    def make_transition_probs(self, rate_matrix, distances, _equilibrium):
         rate_matrix = _ensure_tensor(rate_matrix)
         distances = _ensure_tensor(distances)
         distances = distances[..., None, None]

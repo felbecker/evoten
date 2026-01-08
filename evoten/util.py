@@ -42,7 +42,7 @@ class Backend():
         )
     
     
-    def make_transition_probs(self, rate_matrix, distances):
+    def make_transition_probs(self, rate_matrix, distances, equilibrium):
         """Constructs a probability matrix of mutating or copying one an input
         to another over a given amount of evolutionary time. The rate matrix and
         distance tensor can have arbitrary leading dimensions for which 
@@ -56,7 +56,7 @@ class Backend():
             Stack of probability matrices of shape (..., d, d)
         """
         return self.wrapped_backend.make_transition_probs(
-            rate_matrix, distances
+            rate_matrix, distances, equilibrium
         )
     
 

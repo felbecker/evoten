@@ -360,7 +360,7 @@ class TestBackend():
         ]
         equilibrium = np.ones((3,3)) / 3.
         rate_matrix = backend.make_rate_matrix(exchangeabilities, equilibrium)
-        P = backend.make_transition_probs(rate_matrix, np.ones((1, 1)))
+        P = backend.make_transition_probs(rate_matrix, np.ones((1, 1)), equilibrium)
         if decode:
             P = P.numpy()
         # test if matrix is probabilistic
@@ -450,15 +450,16 @@ class TestModelTF(unittest.TestCase):
         leaf_names = ['A', 'B', 'C', 'D']
         R, pi = substitution_models.jukes_cantor(4./3)
         rate_matrix = model.backend.make_rate_matrix(R, pi)
-        return leaves, leaf_names, t, rate_matrix, refs
+        return leaves, leaf_names, t, rate_matrix, pi, refs
 
 
     def test_anc_probs_star(self):
-        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, pi, refs = self.get_star_inputs_refs()
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = pi[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, t.branch_lengths
+            rate_matrix, t.branch_lengths, equilibrium
         )
         # test if the ancestral probabilities are computed correctly
         X = model.compute_ancestral_probabilities(
@@ -473,11 +474,12 @@ class TestModelTF(unittest.TestCase):
 
 
     def test_likelihood_star(self):
-        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, pi, refs = self.get_star_inputs_refs()
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = pi[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, t.branch_lengths
+            rate_matrix, t.branch_lengths, equilibrium
         )
         L = model.loglik(
             leaves,
@@ -488,7 +490,9 @@ class TestModelTF(unittest.TestCase):
             leaves_are_probabilities=True
         )
         self.assertEqual(L.shape, (1,3))
-        np.testing.assert_almost_equal(L[0], np.log(np.sum(refs, -1)/4), decimal=6)
+        np.testing.assert_allclose(
+            L[0], np.log(np.sum(refs, -1)/4), atol=1e-6, rtol=1e-6
+        )
 
 
     def test_likelihood_simple4(self):
@@ -505,7 +509,7 @@ class TestModelTF(unittest.TestCase):
         Q = model.backend.make_rate_matrix(R, pi)
         B = np.ones_like(t.branch_lengths)
 
-        transition_probs = model.backend.make_transition_probs(Q, B)
+        transition_probs = model.backend.make_transition_probs(Q, B, pi)
         L = model.loglik(
             leaves,
             t,
@@ -520,14 +524,15 @@ class TestModelTF(unittest.TestCase):
 
 
     def test_anc_probs_star_unordered_leaves(self):
-        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, pi, refs = self.get_star_inputs_refs()
         permuation = [2,1,0,3]
         leaves = leaves[permuation]
         leaf_names = [leaf_names[i] for i in permuation]
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = pi[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, t.branch_lengths
+            rate_matrix, t.branch_lengths, equilibrium
         )
         X = model.compute_ancestral_probabilities(
             leaves,
@@ -600,15 +605,17 @@ class TestModelTF(unittest.TestCase):
                                  [1./3, -1, 1./3, 1./3],
                                  [1./3, 1./3, -1, 1./3],
                                  [1./3, 1./3, 1./3, -1]]], dtype=util.default_dtype)
-        return leaves, leaf_names, t, rate_matrix, refs
+        equilibrium = np.array([[1./4, 1./4, 1./4, 1./4]], dtype=util.default_dtype)
+        return leaves, leaf_names, t, rate_matrix, equilibrium, refs
 
 
     def test_anc_probs_simple3(self):
-        leaves, leaf_names, t, rate_matrix, refs = self.get_simple3_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, equilibrium, refs = self.get_simple3_inputs_refs()
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = equilibrium[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, t.branch_lengths
+            rate_matrix, t.branch_lengths, equilibrium
         )
         # test if the ancestral probabilities are computed correctly
         X = model.compute_ancestral_probabilities(
@@ -627,12 +634,13 @@ class TestModelTF(unittest.TestCase):
         leaves_ind = np.array([[0,1,3,3,1]])
         leaves = np.eye(4, dtype=util.default_dtype)[leaves_ind]
         leaves = leaves[:,np.newaxis]
-        _,_,_,rate_matrix,_ = self.get_simple3_inputs_refs()
+        _,_,_,rate_matrix,equilibrium,_ = self.get_simple3_inputs_refs()
 
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         tree.branch_lengths = tree.branch_lengths[:, np.newaxis]
+        equilibrium = equilibrium[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, tree.branch_lengths
+            rate_matrix, tree.branch_lengths, equilibrium
         )
 
         # this should throw an assertion error as there are no internal nodes
@@ -660,12 +668,12 @@ class TestModelTF(unittest.TestCase):
 
 
     def test_multi_model_anc_probs_star(self):
-        leaves, leaf_names, t, rate_matrix, refs = self.get_star_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, pi, refs = self.get_star_inputs_refs()
 
         # test model dimension with Jukes Cantor for other choices of mue
         mues = [1., 2.]
-        R, pi = substitution_models.jukes_cantor(mues)
-        rate_matrices = model.backend.make_rate_matrix(R, pi, normalized=False)
+        R, pi_multi = substitution_models.jukes_cantor(mues)
+        rate_matrices = model.backend.make_rate_matrix(R, pi_multi, normalized=False)
         refs2 = np.array([[[
             self.get_ref_star(i, np.argmax(leaves[:,0,j], -1), mue=mue)
             for i in range(4)]
@@ -678,9 +686,12 @@ class TestModelTF(unittest.TestCase):
         # 1. both transition_probs and leaves have a model dimension
 
         rate_matrices_full = np.concatenate([rate_matrix, rate_matrices], axis=0)
+        equilibrium_full = np.concatenate([pi, pi_multi], axis=0)
         # broadcast in the node and the length dimension
         rate_matrices_full = rate_matrices_full[np.newaxis, :, np.newaxis]
+        equilibrium_full = equilibrium_full[np.newaxis, :, np.newaxis]
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
+        equilibrium = pi[np.newaxis, :, np.newaxis]
 
         # broad cast in the length dimension
         branch_lengths_full = np.concatenate([branch_lengths]*3, axis=1)
@@ -691,7 +702,7 @@ class TestModelTF(unittest.TestCase):
 
         # produce transition probs of shape (4, 3, 1, 4, 4)
         transition_probs = model.backend.make_transition_probs(
-            rate_matrices_full, t.branch_lengths
+            rate_matrices_full, t.branch_lengths, equilibrium_full
         )
         X_no_broadcast = model.compute_ancestral_probabilities(
             leaves_full,
@@ -716,7 +727,7 @@ class TestModelTF(unittest.TestCase):
 
         # 3. rate_matrices do not have a model dimension and are broadcasted
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, t.branch_lengths
+            rate_matrix, t.branch_lengths, equilibrium
         )
         X_broadcast_rates = model.compute_ancestral_probabilities(
             leaves_full,
@@ -732,11 +743,12 @@ class TestModelTF(unittest.TestCase):
 
 
     def test_marginals_star(self):
-        leaves, leaf_names, t, rate_matrix, ref = self.get_star_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, pi, ref = self.get_star_inputs_refs()
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = pi[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, t.branch_lengths
+            rate_matrix, t.branch_lengths, equilibrium
         )
         marginals = model.compute_ancestral_marginals(
             leaves,
@@ -747,22 +759,23 @@ class TestModelTF(unittest.TestCase):
             leaves_are_probabilities=True,
             return_probabilities=True
         )
-        np.testing.assert_almost_equal(
-            np.sum(marginals.numpy(), -1), 1., decimal=6
+        np.testing.assert_allclose(
+            np.sum(marginals.numpy(), -1), 1., atol=3e-6, rtol=1e-6
         )
-        np.testing.assert_almost_equal(
+        np.testing.assert_allclose(
             marginals[0,0],
             ref / np.sum(ref, axis=-1, keepdims=True),
-            decimal=6
+            atol=3e-6, rtol=1e-6
         )
 
 
     def test_marginals_simple3(self):
-        leaves, leaf_names, t, rate_matrix, _ = self.get_simple3_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, equilibrium, _ = self.get_simple3_inputs_refs()
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = equilibrium[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, branch_lengths
+            rate_matrix, branch_lengths, equilibrium
         )
         marginals = model.compute_ancestral_marginals(
             leaves,
@@ -812,7 +825,7 @@ class TestModelTF(unittest.TestCase):
         # recompute the transition matrices, as the node order has changed
         branch_lengths = t.branch_lengths[:, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, branch_lengths
+            rate_matrix, branch_lengths, equilibrium
         )
         marginals_H = model.compute_ancestral_marginals(
             leaves,
@@ -846,11 +859,12 @@ class TestModelTF(unittest.TestCase):
 
 
     def test_leaf_out_marginals_simple3(self):
-        leaves, leaf_names, t, rate_matrix, _ = self.get_simple3_inputs_refs()
+        leaves, leaf_names, t, rate_matrix, equilibrium, _ = self.get_simple3_inputs_refs()
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = equilibrium[np.newaxis, :, np.newaxis]
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, t.branch_lengths
+            rate_matrix, t.branch_lengths, equilibrium
         )
         leaf_out_marginals = model.compute_leaf_out_marginals(
             leaves,
@@ -913,7 +927,7 @@ class TestModelTF(unittest.TestCase):
         tree.branch_lengths = tree.branch_lengths[:, np.newaxis]
 
         transition_probs = model.backend.make_transition_probs(
-            rate_matrix, tree.branch_lengths
+            rate_matrix, tree.branch_lengths, [1./4, 1./4, 1./4, 1./4]
         )
 
         root = np.eye(4, dtype=util.default_dtype)[np.newaxis, np.newaxis]
@@ -925,7 +939,7 @@ class TestModelTF(unittest.TestCase):
             pii = 1./4 + 3./4 * np.exp(-mue*t[i])
             pij = 1./4 - 1./4 * np.exp(-mue*t[i])
             ref = np.eye(4) * pii + (1-np.eye(4)) * pij
-            np.testing.assert_almost_equal(dist[i,0], ref)
+            np.testing.assert_allclose(dist[i,0], ref, atol=1e-6)
 
 
 
@@ -951,11 +965,11 @@ class TestGradientTF(unittest.TestCase):
         leaf_names = ['A', 'B', 'C', 'D']
         R, pi = substitution_models.jukes_cantor(4./3)
         rate_matrix = model.backend.make_rate_matrix(R, pi)
-        return leaves, leaf_names, t, rate_matrix
+        return leaves, leaf_names, t, rate_matrix, pi
 
 
     def test_gradient_star(self):
-        leaves, leaf_names, t, rate_matrix = self.get_star_inputs()
+        leaves, leaf_names, t, rate_matrix, pi = self.get_star_inputs()
         # we want to differentiate the likelihood
         # w.r.t. to leaves, branch lengths or rate matrix
         # create a variable for the branch lengths and initialize it with the
@@ -971,7 +985,7 @@ class TestGradientTF(unittest.TestCase):
         # w.r.t. to the leaves, branch lengths and rate matrix
         with tf.GradientTape(persistent=True) as tape:
             transition_probs = model.backend.make_transition_probs(
-                Q[tf.newaxis, :, tf.newaxis], t.branch_lengths[:, tf.newaxis]
+                Q[tf.newaxis, :, tf.newaxis], t.branch_lengths[:, tf.newaxis], pi[tf.newaxis, :, tf.newaxis]
             )
             L = model.loglik(
                 X,
@@ -999,7 +1013,7 @@ class TestGradientPytorch(TestGradientTF):
 
 
     def test_gradient_star(self):
-        leaves, leaf_names, t, rate_matrix = self.get_star_inputs()
+        leaves, leaf_names, t, rate_matrix, pi = self.get_star_inputs()
 
         B = torch.nn.Parameter(torch.tensor(t.branch_lengths))
         # make the tree use the variable when computing the lilkehood
@@ -1011,7 +1025,7 @@ class TestGradientPytorch(TestGradientTF):
         # compute the likelihood and test if it can be differentiated
         # w.r.t. to the leaves, branch lengths and rate matrix
         transition_probs = model.backend.make_transition_probs(
-            Q[np.newaxis, :, np.newaxis], t.branch_lengths[:, np.newaxis]
+            Q[np.newaxis, :, np.newaxis], t.branch_lengths[:, np.newaxis], pi[np.newaxis, :, np.newaxis]
         )
         L = model.loglik(
             X,
@@ -1172,6 +1186,7 @@ class EvotenModel(tf.keras.Model):
         transition_probs = evoten.backend.make_transition_probs(
             self.make_rate_matrix(),
             self.make_branch_lengths(),
+            self.make_equilibrium_frequencies()
         )
         return evoten.model.loglik(
             inputs,

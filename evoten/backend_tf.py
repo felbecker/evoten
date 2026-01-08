@@ -1,10 +1,8 @@
-from functools import partial
-
 import numpy as np
 import tensorflow as tf
-from Bio.Phylo import BaseTree
 
 from evoten import util
+from evoten.expm_gtr import expm_gtr
 
 
 # Documentation in the base class. Hover over the method name to see the
@@ -30,10 +28,9 @@ class BackendTF(util.Backend):
         return Q
 
 
-    def make_transition_probs(self, rate_matrix, distances):
-        distances = tf.expand_dims(tf.expand_dims(distances, -1), -1)
+    def make_transition_probs(self, rate_matrix, distances, equilibrium):
         # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
-        P = tf.linalg.expm(rate_matrix * distances)
+        P = expm_gtr(rate_matrix, distances, equilibrium)
         return P
 
 
