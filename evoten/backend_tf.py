@@ -10,12 +10,12 @@ from evoten.expm_gtr import expm_gtr
 class BackendTF(util.Backend):
 
     def make_rate_matrix(
-            self,
-            exchangeabilities,
-            equilibrium,
-            epsilon=1e-16,
-            normalized=True
-        ):
+        self,
+        exchangeabilities,
+        equilibrium,
+        epsilon=1e-16,
+        normalized=True
+    ):
         Q = exchangeabilities * tf.expand_dims(equilibrium, -2)
         diag = tf.reduce_sum(Q, axis=-1, keepdims=True)
         eye = tf.eye(tf.shape(diag)[-2], dtype=diag.dtype)
