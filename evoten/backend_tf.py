@@ -66,29 +66,59 @@ class BackendTF(util.Backend):
         X,
         transition_probs,
         transposed=False,
-        logarithmic=True
+        logarithmic=True,
+        stable=True,
     ):
-        # fast matmul version, but requires conversion, might be numerically
-        # unstable
-        if logarithmic:
-            X = self.probs_from_logits(X)
+        if stable and logarithmic:
+            # stable log-sum-exp version
+            # Convert transition probs to log space
+            transition_log_probs = self.logits_from_probs(transition_probs)
 
-        if transition_probs.shape[-3] == 1:
-            # broadcasting  in L is required
-            # it is most efficient to let the matmul op handle this
-            transition_probs = transition_probs[..., 0, :, :]
-            X = tf.matmul(X, transition_probs, transpose_b=not transposed)
+            # Handle broadcasting in L dimension
+            if transition_log_probs.shape[-3] == 1:
+                transition_log_probs = transition_log_probs[..., 0, :, :]
+
+            # Perform log-space matrix multiplication
+
+            if transposed:
+                # Compute log(X @ P^T) = log-sum-exp over d
+                # Expand dimensions for broadcasting
+                X_expanded = tf.expand_dims(X, axis=-1)  # (..., L, d_in, 1)
+                transition_expanded = tf.expand_dims(transition_log_probs, axis=-3)  # (..., 1, d_out, d_in)
+                # Sum is over d_in dimension
+                result = tf.reduce_logsumexp(X_expanded + transition_expanded, axis=-2)
+            else:
+                # Compute log(X @ P) = log-sum-exp over d
+                # Expand dimensions for broadcasting
+                X_expanded = tf.expand_dims(X, axis=-1)  # (..., L, d_in, 1)
+                transition_expanded = tf.expand_dims(transition_log_probs, axis=-3)  # (..., 1, d_in, d_out)
+                # Sum is over d_in dimension
+                result = tf.reduce_logsumexp(X_expanded + transition_expanded, axis=-2)
+
+            return result
+
         else:
-            # the user has provided transition matrices for all positions
-            # add a dummy dimension to X for the matmul op
-            X = tf.expand_dims(X, axis=-2)
-            X = tf.matmul(X, transition_probs, transpose_b=not transposed)
-            # strip the dummy dimension
-            X = X[..., 0, :]
+            # fast matmul version, but requires conversion, might be numerically
+            # unstable
+            if logarithmic:
+                X = self.probs_from_logits(X)
 
-        if logarithmic:
-            X = self.logits_from_probs(X)
-        return X
+            if transition_probs.shape[-3] == 1:
+                # broadcasting  in L is required
+                # it is most efficient to let the matmul op handle this
+                transition_probs = transition_probs[..., 0, :, :]
+                X = tf.matmul(X, transition_probs, transpose_b=not transposed)
+            else:
+                # the user has provided transition matrices for all positions
+                # add a dummy dimension to X for the matmul op
+                X = tf.expand_dims(X, axis=-2)
+                X = tf.matmul(X, transition_probs, transpose_b=not transposed)
+                # strip the dummy dimension
+                X = X[..., 0, :]
+
+            if logarithmic:
+                X = self.logits_from_probs(X)
+            return X
 
 
     def aggregate_children_log_probs(self, X, parent_map, num_ancestral):
