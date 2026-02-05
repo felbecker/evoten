@@ -9,13 +9,16 @@ class GTRDecomp(NamedTuple):
     sqrt_pi: tf.Tensor
     inv_sqrt_pi: tf.Tensor
 
-def precompute_gtr(Q: tf.Tensor, pi: tf.Tensor) -> GTRDecomp:
+def precompute_gtr(
+    Q: tf.Tensor, pi: tf.Tensor, epsilon: float = 1e-16
+) -> GTRDecomp:
     """Precompute eigendecomposition for GTR matrix exponentiation. Supports
     broadcasting over leading dimensions of Q and pi.
 
     Args:
         Q: Tensor of shape (..., d, d), batch of square rate matrices.
         pi: Tensor of shape (..., d) or (d,), stationary distributions.
+        epsilon: Small constant for numerical stability.
 
     Returns:
         GTRDecomp object.
@@ -25,8 +28,9 @@ def precompute_gtr(Q: tf.Tensor, pi: tf.Tensor) -> GTRDecomp:
     d = tf.shape(Q)[-1]
     pi = tf.broadcast_to(pi, tf.concat([tf.shape(Q)[:-2], [d]], axis=0))
 
-    sqrt_pi = tf.sqrt(pi)
-    inv_sqrt_pi = 1.0 / sqrt_pi
+    pi_safe = tf.maximum(pi, epsilon)
+    sqrt_pi = tf.sqrt(pi_safe)
+    inv_sqrt_pi = 1.0 / tf.maximum(sqrt_pi, epsilon)
 
     # Symmetric matrix
     S = Q * tf.expand_dims(inv_sqrt_pi, -2)
@@ -71,7 +75,9 @@ def expm_gtr_from_decomp(decomp: GTRDecomp, t: tf.Tensor) -> tf.Tensor:
     expQ = inv_sqrt_pi * M * sqrt_pi
     return expQ
 
-def expm_gtr(Q: tf.Tensor, t: tf.Tensor, pi: tf.Tensor) -> tf.Tensor:
+def expm_gtr(
+    Q: tf.Tensor, t: tf.Tensor, pi: tf.Tensor, epsilon: float = 1e-16
+) -> tf.Tensor:
     """Compute matrix exponential for *reversible* rate matrices Q using TF.
 
     Assumes detailed balance: pi_i * Q_{i,j} = pi_j * Q_{j,i}, pi_i > 0.
@@ -80,11 +86,12 @@ def expm_gtr(Q: tf.Tensor, t: tf.Tensor, pi: tf.Tensor) -> tf.Tensor:
         Q: Tensor of shape (..., d, d), batch of square rate matrices.
         t: Scalar tensor or 1-D tensor of shape (...,), evolutionary times.
         pi: Tensor of shape (..., d) or (d,), stationary distributions.
+        epsilon: Small constant for numerical stability.
 
     Returns:
         Tensor of shape (..., d, d) equal to expm(Q) computed via symmetric
         eigendecomposition.
     """
-    decomp = precompute_gtr(Q, pi)
+    decomp = precompute_gtr(Q, pi, epsilon=epsilon)
     M = expm_gtr_from_decomp(decomp, t)
     return M
