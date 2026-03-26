@@ -90,10 +90,10 @@ class BackendTF(util.Backend):
             else:
                 # Compute log(X @ P) = log-sum-exp over d
                 # Expand dimensions for broadcasting
-                X_expanded = tf.expand_dims(X, axis=-1)  # (..., L, d_in, 1)
+                X_expanded = tf.expand_dims(X, axis=-2)  # (..., L, d_in, 1)
                 transition_expanded = tf.expand_dims(transition_log_probs, axis=-3)  # (..., 1, d_in, d_out)
                 # Sum is over d_in dimension
-                result = tf.reduce_logsumexp(X_expanded + transition_expanded, axis=-2)
+                result = tf.reduce_logsumexp(X_expanded + transition_expanded, axis=-1)
 
             return result
 
