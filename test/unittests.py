@@ -942,6 +942,60 @@ class TestModelTF(unittest.TestCase):
             np.testing.assert_allclose(dist[i,0], ref, atol=1e-6)
 
 
+class TestGapPruningEquivTF(unittest.TestCase):
+    """ Tests that the log-likelihood of a tree with all-gap leaves is zero.
+    This can e.g. fail if P is not symmetric but not transposed right.
+    """
+    def setUp(self):
+        util.set_backend("tensorflow")
+
+    def test_gap_pruning_loglik_is_zero(self):
+        t = TreeHandler.read("test/data/simple.tree")
+
+        # Tree of height 4 with four leaves, one model and one alignment column.
+        # All-gap leaves are represented as [1, 1, 1, 1], which should be
+        # equivalent to pruning away each leaf/edge and therefore yield
+        # log-likelihood 0 for every site.
+        leaves = np.ones((4, 1, 1, 4), dtype=util.default_dtype)
+
+        # Kimura 80 with strong transition bias and non-uniform pi
+        kappa = np.array([10.0], dtype=util.default_dtype)
+        pi = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=util.default_dtype)
+        R = np.array(
+            [[
+                [0.0, 1.0, kappa[0], 1.0],
+                [1.0, 0.0, 1.0, kappa[0]],
+                [kappa[0], 1.0, 0.0, 1.0],
+                [1.0, kappa[0], 1.0, 0.0],
+            ]],
+            dtype=util.default_dtype,
+        )
+
+        Q = model.backend.make_rate_matrix(R, pi)
+        transition_probs = model.backend.make_transition_probs(
+            Q,
+            t.branch_lengths[:, np.newaxis],
+            pi,
+        )
+
+        L = model.loglik(
+            leaves,
+            t,
+            transition_probs,
+            equilibrium_logits=np.log(pi).astype(util.default_dtype),
+            leaf_names=['A', 'B', 'C', 'D'],
+            leaves_are_probabilities=True,
+        )
+
+        self.assertEqual(L.shape, (1, 1))
+        np.testing.assert_allclose(
+            L,
+            np.zeros((1, 1), dtype=util.default_dtype),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+
+
 
 class TestModelPytorch(TestModelTF):
 
