@@ -1305,6 +1305,120 @@ class TestKerasModel(unittest.TestCase):
 
 
 
+class TestTupleAlignment(unittest.TestCase):
+
+    def test_k2_with_gaps(self):
+        # Hand-verifiable: k=2, 3 rows with gaps
+        # Row 0 non-gaps: [0,1,2,3] → tuples {(0,1),(1,2),(2,3)}
+        # Row 1 non-gaps: [0,2,3]   → tuples {(0,2),(2,3)}
+        # Row 2 non-gaps: [0,1,2]   → tuples {(0,1),(1,2)}
+        # Count>=2: (0,1), (1,2), (2,3)
+        S = ['ACGT', 'A-GT', 'ACG-']
+        result = util.tuple_alignment(S, k=2)
+        self.assertEqual(result, ['ACCGGT', '----GT', 'ACCG--'])
+
+    def test_gapless_column_count(self):
+        # Gap-less MSA: L columns, output must have L-k+1 columns
+        S = ['ACGT', 'TTGA']  # L=4, k=3 → 2 output columns
+        result = util.tuple_alignment(S, k=3)
+        self.assertEqual(result, ['ACGCGT', 'TTGTGA'])
+        self.assertTrue(all(len(r) == (4 - 3 + 1) * 3 for r in result))
+
+    def test_clamsa_example(self):
+        # MSA from the clamsa tuple_alignment docstring, using k=3, no frame
+        S = ['ac--ttgatgtcgataa',
+             'ac--ctaa---cancag',
+             'acg-ttga-gtcgacaa',
+             'acgtttgat-tcgac-a',
+             'acg-ttgatgttga-aa']
+        result = util.tuple_alignment(S)
+        expected = [
+            '---act---ctt---ttgtgagatatgtgtgtctcgcgagatatataa',
+            '---acc---cct---ctataa---------------canancncacag',
+            'acg---cgt---gttttgtga---------gtctcgcgagacacacaa',
+            'acg------------ttgtgagat---------tcgcgagac------',
+            'acg---cgt---gttttgtgagatatgtgtgttttgtga---------',
+        ]
+        self.assertEqual(result, expected)
+        # Structural: 16 output columns, each entry all-gap or all-non-gap
+        self.assertTrue(all(len(r) == 16 * 3 for r in result))
+        for row in result:
+            for i in range(0, len(row), 3):
+                entry = row[i:i+3]
+                self.assertTrue(entry == '---' or '-' not in entry)
+
+
+class TestEncodeTupleAlignment(unittest.TestCase):
+
+    def test_shape(self):
+        # k=2: 4**2=16 classes; 3 rows, 3 output columns
+        ta = ['ACCGGT', '----GT', 'ACCG--']
+        arr = util.encode_tuple_alignment(ta, k=2)
+        self.assertEqual(arr.shape, (3, 3, 16))
+
+    def test_one_hot_values(self):
+        # 'ac' -> 0*4+1=1, 'cg' -> 1*4+2=6, 'gt' -> 2*4+3=11
+        ta = ['ACCGGT', '----GT', 'ACCG--']
+        arr = util.encode_tuple_alignment(ta, k=2)
+        # row 0: [1,0,...], [0,0,...,1,0,...] at idx 6, [...,1,0,...] at idx 11
+        np.testing.assert_array_equal(arr[0, 0], np.eye(16)[1])   # 'ac'
+        np.testing.assert_array_equal(arr[0, 1], np.eye(16)[6])   # 'cg'
+        np.testing.assert_array_equal(arr[0, 2], np.eye(16)[11])  # 'gt'
+
+    def test_gap_entries_are_ones(self):
+        # Gap entries are all-ones (neutral for Felsenstein's pruning)
+        ta = ['ACCGGT', '----GT', 'ACCG--']
+        arr = util.encode_tuple_alignment(ta, k=2)
+        # row 1, columns 0 and 1 are gaps
+        np.testing.assert_array_equal(arr[1, 0], np.ones(16))
+        np.testing.assert_array_equal(arr[1, 1], np.ones(16))
+        # row 2, column 2 is a gap
+        np.testing.assert_array_equal(arr[2, 2], np.ones(16))
+
+    def test_codon_index(self):
+        # 'aaa'->0, 'cgt'->1*16+2*4+3=27
+        ta = ['aaacgt', 'aaacgt']
+        arr = util.encode_tuple_alignment(ta, k=3)
+        self.assertEqual(arr.shape, (2, 2, 64))
+        np.testing.assert_array_equal(arr[0, 0], np.eye(64)[0])   # 'aaa'->0
+        np.testing.assert_array_equal(arr[0, 1], np.eye(64)[27])  # 'cgt'->27
+        np.testing.assert_array_equal(arr[1, 0], np.eye(64)[0])
+        np.testing.assert_array_equal(arr[1, 1], np.eye(64)[27])
+
+    def test_ambiguous_base_is_ones(self):
+        # 'n' is not in {a,c,g,t} → all-ones (neutral)
+        ta = ['acgnnn', 'acgnnn']
+        arr = util.encode_tuple_alignment(ta, k=3)
+        np.testing.assert_array_equal(arr[0, 1], np.ones(64))
+
+
+class TestTupleArray(unittest.TestCase):
+
+    def test_matches_two_step_gappy(self):
+        # clamsa example: gappy MSA, k=3
+        S = ['ac--ttgatgtcgataa',
+             'ac--ctaa---cancag',
+             'acg-ttga-gtcgacaa',
+             'acgtttgat-tcgac-a',
+             'acg-ttgatgttga-aa']
+        expected = util.encode_tuple_alignment(util.tuple_alignment(S, k=3), k=3)
+        result = util.tuple_array(S, k=3)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_matches_two_step_gapless(self):
+        # gap-less MSA: all L-k+1 columns present
+        S = ['ACGTACGT', 'TTGACCGA', 'GCATTTCA']
+        expected = util.encode_tuple_alignment(util.tuple_alignment(S, k=3), k=3)
+        result = util.tuple_array(S, k=3)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_matches_two_step_k2(self):
+        S = ['ACGT', 'A-GT', 'ACG-']
+        expected = util.encode_tuple_alignment(util.tuple_alignment(S, k=2), k=2)
+        result = util.tuple_array(S, k=2)
+        np.testing.assert_array_equal(result, expected)
+
+
 # utility functions
 def _check_symmetry_and_zero_diagonal(test_case : unittest.TestCase, matrix):
     np.testing.assert_almost_equal(matrix, np.transpose(matrix))
