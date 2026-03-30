@@ -1402,20 +1402,20 @@ class TestTupleArray(unittest.TestCase):
              'acgtttgat-tcgac-a',
              'acg-ttgatgttga-aa']
         expected = util.encode_tuple_alignment(util.tuple_alignment(S, k=3), k=3)
-        result = util.tuple_array(S, k=3)
+        result, _ = util.tuple_array(S, k=3)
         np.testing.assert_array_equal(result, expected)
 
     def test_matches_two_step_gapless(self):
         # gap-less MSA: all L-k+1 columns present
         S = ['ACGTACGT', 'TTGACCGA', 'GCATTTCA']
         expected = util.encode_tuple_alignment(util.tuple_alignment(S, k=3), k=3)
-        result = util.tuple_array(S, k=3)
+        result, _ = util.tuple_array(S, k=3)
         np.testing.assert_array_equal(result, expected)
 
     def test_matches_two_step_k2(self):
         S = ['ACGT', 'A-GT', 'ACG-']
         expected = util.encode_tuple_alignment(util.tuple_alignment(S, k=2), k=2)
-        result = util.tuple_array(S, k=2)
+        result, _ = util.tuple_array(S, k=2)
         np.testing.assert_array_equal(result, expected)
 
 
