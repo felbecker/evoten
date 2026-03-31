@@ -1,10 +1,7 @@
-from functools import partial
-
 import numpy as np
 import torch
-from Bio.Phylo import BaseTree
 
-from evoten import util
+from evoten import Backend, util
 
 
 def _ensure_tensor(x):
@@ -16,7 +13,7 @@ def _ensure_tensor(x):
 
 
 # Documentation in the base class. Hover over the method name to see the docstring.
-class BackendTorch(util.Backend):
+class BackendTorch(Backend):
 
     def make_rate_matrix(
             self,
@@ -111,6 +108,7 @@ class BackendTorch(util.Backend):
 
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
+        equilibrium_logits = _ensure_tensor(equilibrium_logits)
         return torch.logsumexp(root_logits + equilibrium_logits, dim=-1)
 
 
@@ -155,3 +153,7 @@ class BackendTorch(util.Backend):
             (num_nodes, models, leaves.shape[-2], leaves.shape[-1]),
             dtype=leaves.dtype, device=leaves.device
         )
+
+
+    def ensure_tensor(self, x):
+        return _ensure_tensor(x)

@@ -1,7 +1,5 @@
-import numpy as np
-
 from evoten.tree_handler import TreeHandler
-from evoten.util import backend
+from evoten.backend import backend
 
 
 
@@ -260,7 +258,9 @@ def compute_ancestral_marginals(
         # include equilibrium distribution when passing messages to the root, so
         # we don't have to add it later
         if height == tree_handler.height-1:
-            M += equilibrium_logits / tree_handler.layer_sizes[height]
+            M = M + backend.ensure_tensor(
+                equilibrium_logits / tree_handler.layer_sizes[height]
+            )
 
         # aggregate over child nodes and add to beliefs
         parent_indices = tree_handler.get_parent_indices_by_height(height)

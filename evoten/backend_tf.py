@@ -1,13 +1,13 @@
 import numpy as np
 import tensorflow as tf
 
-from evoten import util
+from evoten import backend, util, Backend
 from evoten.expm_gtr import expm_gtr
 
 
 # Documentation in the base class. Hover over the method name to see the
 # docstring.
-class BackendTF(util.Backend):
+class BackendTF(Backend):
 
     def make_rate_matrix(
         self,
@@ -169,3 +169,7 @@ class BackendTF(util.Backend):
     def make_zeros(self, leaves, models, num_nodes):
         _, _, L, d = tf.unstack(tf.shape(leaves), 4)
         return tf.zeros((num_nodes, models, L, d), dtype=leaves.dtype)
+
+
+    def ensure_tensor(self, x):
+        return x

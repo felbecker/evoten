@@ -6,7 +6,8 @@ from io import StringIO
 import numpy as np
 from Bio import Phylo
 
-from evoten.util import backend, default_dtype
+from evoten.util import default_dtype
+from evoten.backend import backend
 
 
 @dataclass
