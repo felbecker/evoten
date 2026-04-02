@@ -1,6 +1,7 @@
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1" #run unit tests on CPU for speed and to avoid interference
+#run unit tests on CPU for speed and to avoid interference
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import unittest
 
 import numpy as np
@@ -8,14 +9,15 @@ import tensorflow as tf
 import torch
 from Bio import SeqIO
 
-from evoten import model, substitution_models, util
+from evoten import model, set_backend, substitution_models, util
 from evoten.tree_handler import TreeHandler
+from evoten.backend import backend
 
 
 class TestTree(unittest.TestCase):
 
     def setUp(self):
-        util.set_backend("tensorflow")
+        set_backend("tensorflow")
 
     def test_indices(self):
         # evotensorts nodes by height and left to right within a layer
@@ -370,6 +372,58 @@ class TestBackend():
         number_of_expected_mutations = - 2./3 * np.log( 1 - 3./2 * mut_prob)
         np.testing.assert_almost_equal(number_of_expected_mutations, 1.)
 
+    def _test_traverse_branch(self, backend, decode=False):
+        # Simple 3x3 transition probability matrix (stochastic)
+        P = np.array([[[
+            [0.8, 0.1, 0.1],
+            [0.2, 0.7, 0.1],
+            [0.1, 0.3, 0.6]
+        ]]], dtype=util.default_dtype)
+        # Probabilities for 2 positions (shape: 1, 1, 2, 3)
+        # at the upper node of a branch
+        x = np.array([[[
+            [0.1, 0.3, 0.2],
+            [0.1, 0.8, 0.1]
+        ]]], dtype=util.default_dtype)
+        y = x @ np.transpose(P, (0,1,3,2))
+        result = backend.traverse_branch(
+            x, P, logarithmic = False,
+        )
+        result_log = backend.traverse_branch(
+            np.log(x), P, logarithmic = True,
+        )
+        if decode:
+            result = result.numpy()
+            result_log = result_log.numpy()
+        np.testing.assert_allclose(result, y, atol=1e-6)
+        np.testing.assert_allclose(result_log, np.log(y), atol=1e-6)
+
+    def _test_traverse_branch_transposed(self, backend, decode=False):
+        # Simple 3x3 transition probability matrix (stochastic)
+        P = np.array([[[
+            [0.8, 0.1, 0.1],
+            [0.2, 0.7, 0.1],
+            [0.1, 0.3, 0.6]
+        ]]], dtype=util.default_dtype)
+        # Probabilities for 2 positions (shape: 1, 1, 2, 3)
+        # at the upper node of a branch
+        x = np.array([[[
+            [0.1, 0.3, 0.2],
+            [0.1, 0.8, 0.1]
+        ]]], dtype=util.default_dtype)
+        y = x @ P
+        result = backend.traverse_branch(
+            x, P, logarithmic = False, transposed = True,
+        )
+        result_log = backend.traverse_branch(
+            np.log(x), P, logarithmic = True, transposed = True,
+        )
+        if decode:
+            result = result.numpy()
+            result_log = result_log.numpy()
+        np.testing.assert_allclose(result, y, atol=1e-6)
+        np.testing.assert_allclose(result_log, np.log(y), atol=1e-6)
+
     def test_root(self):
         t = TreeHandler.read("test/data/simple3.tree")
         t.change_root("H")
@@ -397,6 +451,14 @@ class TestBackendTF(unittest.TestCase, TestBackend):
         from evoten.backend_tf import BackendTF
         self._test_transition_probs(BackendTF())
 
+    def test_traverse_branch(self):
+        from evoten.backend_tf import BackendTF
+        self._test_traverse_branch(BackendTF())
+
+    def test_traverse_branch_transposed(self):
+        from evoten.backend_tf import BackendTF
+        self._test_traverse_branch_transposed(BackendTF())
+
 
 class TestBackendPytorch(unittest.TestCase, TestBackend):
 
@@ -416,12 +478,20 @@ class TestBackendPytorch(unittest.TestCase, TestBackend):
         from evoten.backend_pytorch import BackendTorch
         self._test_transition_probs(BackendTorch(), decode=True)
 
+    def test_traverse_branch(self):
+        from evoten.backend_pytorch import BackendTorch
+        self._test_traverse_branch(BackendTorch(), decode=True)
+
+    def test_traverse_branch_transposed(self):
+        from evoten.backend_pytorch import BackendTorch
+        self._test_traverse_branch_transposed(BackendTorch(), decode=True)
+
 
 
 class TestModelTF(unittest.TestCase):
 
     def setUp(self):
-        util.set_backend("tensorflow")
+        set_backend("tensorflow")
 
     # computes the correct likelihood of a star-shaped tree when
     # a Jukes-Cantor model is used and
@@ -449,7 +519,7 @@ class TestModelTF(unittest.TestCase):
         leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
         R, pi = substitution_models.jukes_cantor(4./3)
-        rate_matrix = model.backend.make_rate_matrix(R, pi)
+        rate_matrix = backend.make_rate_matrix(R, pi)
         return leaves, leaf_names, t, rate_matrix, pi, refs
 
 
@@ -458,7 +528,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
         equilibrium = pi[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, t.branch_lengths, equilibrium
         )
         # test if the ancestral probabilities are computed correctly
@@ -478,7 +548,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
         equilibrium = pi[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, t.branch_lengths, equilibrium
         )
         L = model.loglik(
@@ -499,17 +569,18 @@ class TestModelTF(unittest.TestCase):
         t = TreeHandler.read("test/data/simple4.tree")
         seqs = []
 
-        for record in SeqIO.parse("test/data/seq-gen.out", "fasta"):
-            seqs.append(str(record.seq))
+        with open("test/data/seq-gen.out") as f:
+            for record in SeqIO.parse(f, "fasta"):
+                seqs.append(str(record.seq))
 
         leaves = util.encode_one_hot(seqs, alphabet="ACGT")
         leaves = leaves[:, np.newaxis]
 
         R, pi = substitution_models.jukes_cantor(d = 4)
-        Q = model.backend.make_rate_matrix(R, pi)
+        Q = backend.make_rate_matrix(R, pi)
         B = np.ones_like(t.branch_lengths)
 
-        transition_probs = model.backend.make_transition_probs(Q, B, pi)
+        transition_probs = backend.make_transition_probs(Q, B, pi)
         L = model.loglik(
             leaves,
             t,
@@ -531,7 +602,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
         equilibrium = pi[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, t.branch_lengths, equilibrium
         )
         X = model.compute_ancestral_probabilities(
@@ -614,7 +685,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
         equilibrium = equilibrium[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, t.branch_lengths, equilibrium
         )
         # test if the ancestral probabilities are computed correctly
@@ -639,7 +710,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         tree.branch_lengths = tree.branch_lengths[:, np.newaxis]
         equilibrium = equilibrium[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, tree.branch_lengths, equilibrium
         )
 
@@ -673,7 +744,7 @@ class TestModelTF(unittest.TestCase):
         # test model dimension with Jukes Cantor for other choices of mue
         mues = [1., 2.]
         R, pi_multi = substitution_models.jukes_cantor(mues)
-        rate_matrices = model.backend.make_rate_matrix(R, pi_multi, normalized=False)
+        rate_matrices = backend.make_rate_matrix(R, pi_multi, normalized=False)
         refs2 = np.array([[[
             self.get_ref_star(i, np.argmax(leaves[:,0,j], -1), mue=mue)
             for i in range(4)]
@@ -701,7 +772,7 @@ class TestModelTF(unittest.TestCase):
         leaves_full = np.concatenate([leaves]*3, axis=1)
 
         # produce transition probs of shape (4, 3, 1, 4, 4)
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrices_full, t.branch_lengths, equilibrium_full
         )
         X_no_broadcast = model.compute_ancestral_probabilities(
@@ -726,7 +797,7 @@ class TestModelTF(unittest.TestCase):
         np.testing.assert_almost_equal(X_broadcast_leaves[-1], refs_full)
 
         # 3. rate_matrices do not have a model dimension and are broadcasted
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, t.branch_lengths, equilibrium
         )
         X_broadcast_rates = model.compute_ancestral_probabilities(
@@ -747,7 +818,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
         equilibrium = pi[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, t.branch_lengths, equilibrium
         )
         marginals = model.compute_ancestral_marginals(
@@ -774,7 +845,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         branch_lengths = t.branch_lengths[:, np.newaxis]
         equilibrium = equilibrium[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, branch_lengths, equilibrium
         )
         marginals = model.compute_ancestral_marginals(
@@ -824,7 +895,7 @@ class TestModelTF(unittest.TestCase):
         t.change_root("H")
         # recompute the transition matrices, as the node order has changed
         branch_lengths = t.branch_lengths[:, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, branch_lengths, equilibrium
         )
         marginals_H = model.compute_ancestral_marginals(
@@ -863,7 +934,7 @@ class TestModelTF(unittest.TestCase):
         rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
         t.branch_lengths = t.branch_lengths[:, np.newaxis]
         equilibrium = equilibrium[np.newaxis, :, np.newaxis]
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, t.branch_lengths, equilibrium
         )
         leaf_out_marginals = model.compute_leaf_out_marginals(
@@ -926,7 +997,7 @@ class TestModelTF(unittest.TestCase):
         # again, we broadcast in the length dimension
         tree.branch_lengths = tree.branch_lengths[:, np.newaxis]
 
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             rate_matrix, tree.branch_lengths, [1./4, 1./4, 1./4, 1./4]
         )
 
@@ -947,7 +1018,7 @@ class TestGapPruningEquivTF(unittest.TestCase):
     This can e.g. fail if P is not symmetric but not transposed right.
     """
     def setUp(self):
-        util.set_backend("tensorflow")
+        set_backend("tensorflow")
 
     def test_gap_pruning_loglik_is_zero(self):
         t = TreeHandler.read("test/data/simple.tree")
@@ -971,8 +1042,8 @@ class TestGapPruningEquivTF(unittest.TestCase):
             dtype=util.default_dtype,
         )
 
-        Q = model.backend.make_rate_matrix(R, pi)
-        transition_probs = model.backend.make_transition_probs(
+        Q = backend.make_rate_matrix(R, pi)
+        transition_probs = backend.make_transition_probs(
             Q,
             t.branch_lengths[:, np.newaxis],
             pi,
@@ -1000,13 +1071,13 @@ class TestGapPruningEquivTF(unittest.TestCase):
 class TestModelPytorch(TestModelTF):
 
     def setUp(self):
-        util.set_backend("pytorch")
+        set_backend("pytorch")
 
 
 class TestGradientTF(unittest.TestCase):
 
     def setUp(self):
-        util.set_backend("tensorflow")
+        set_backend("tensorflow")
 
 
     def get_star_inputs(self):
@@ -1018,7 +1089,7 @@ class TestGradientTF(unittest.TestCase):
         leaves = leaves[:,np.newaxis]
         leaf_names = ['A', 'B', 'C', 'D']
         R, pi = substitution_models.jukes_cantor(4./3)
-        rate_matrix = model.backend.make_rate_matrix(R, pi)
+        rate_matrix = backend.make_rate_matrix(R, pi)
         return leaves, leaf_names, t, rate_matrix, pi
 
 
@@ -1038,7 +1109,7 @@ class TestGradientTF(unittest.TestCase):
         # compute the likelihood and test if it can be differentiated
         # w.r.t. to the leaves, branch lengths and rate matrix
         with tf.GradientTape(persistent=True) as tape:
-            transition_probs = model.backend.make_transition_probs(
+            transition_probs = backend.make_transition_probs(
                 Q[tf.newaxis, :, tf.newaxis], t.branch_lengths[:, tf.newaxis], pi[tf.newaxis, :, tf.newaxis]
             )
             L = model.loglik(
@@ -1063,7 +1134,7 @@ class TestGradientTF(unittest.TestCase):
 class TestGradientPytorch(TestGradientTF):
 
     def setUp(self):
-        util.set_backend("pytorch")
+        set_backend("pytorch")
 
 
     def test_gradient_star(self):
@@ -1078,7 +1149,7 @@ class TestGradientPytorch(TestGradientTF):
 
         # compute the likelihood and test if it can be differentiated
         # w.r.t. to the leaves, branch lengths and rate matrix
-        transition_probs = model.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             Q[np.newaxis, :, np.newaxis], t.branch_lengths[:, np.newaxis], pi[np.newaxis, :, np.newaxis]
         )
         L = model.loglik(
@@ -1149,16 +1220,12 @@ class TestSubstitutionModels(unittest.TestCase):
         _check_symmetry_and_zero_diagonal(self, R)
         _check_if_sums_to_one(self, pi)
 
-
-import evoten.util
-
-
 class EvotenModel(tf.keras.Model):
     """Optimizes the parameters (but not the topology) of a tree."""
 
     def __init__(
         self,
-        tree_handler : evoten.TreeHandler,
+        tree_handler : TreeHandler,
         exchangeability_matrix : np.ndarray,
         branch_lengths : np.ndarray,
         equilibrium_frequencies : np.ndarray,
@@ -1170,12 +1237,12 @@ class EvotenModel(tf.keras.Model):
     ):
         super().__init__(**kwargs)
         self.branch_lengths = branch_lengths.astype(np.float32)
-        self.branch_lengths_init = evoten.backend.inverse_softplus(
+        self.branch_lengths_init = backend.inverse_softplus(
             self.branch_lengths
         ).numpy()
         self.exchangeability_matrix = exchangeability_matrix.astype(np.float32)
         self.exchangeability_matrix_init = (
-            evoten.backend.inverse_softplus(
+            backend.inverse_softplus(
                 self.exchangeability_matrix
             ).numpy()
         )
@@ -1214,22 +1281,22 @@ class EvotenModel(tf.keras.Model):
         self.built = True
 
     def make_branch_lengths(self):
-        return evoten.backend.make_branch_lengths(
+        return backend.make_branch_lengths(
             self.branch_lengths_kernel
         )
 
     def make_equilibrium_frequencies(self):
-        return evoten.backend.make_equilibrium(
+        return backend.make_equilibrium(
             self.equilibrium_frequencies_kernel
         )
 
     def make_exchangeability_matrix(self):
-        return evoten.backend.make_symmetric_pos_semidefinite(
+        return backend.make_symmetric_pos_semidefinite(
             self.exchangeability_matrix_kernel
         )
 
     def make_rate_matrix(self):
-        return evoten.backend.make_rate_matrix(
+        return backend.make_rate_matrix(
             self.make_exchangeability_matrix(),
             self.make_equilibrium_frequencies(),
         )
@@ -1237,12 +1304,12 @@ class EvotenModel(tf.keras.Model):
     def loglik(self, inputs):
         # inputs: [num_leaves, num_models, seq_length, num_features]
         # outputs: [num_models, seq_length]
-        transition_probs = evoten.backend.make_transition_probs(
+        transition_probs = backend.make_transition_probs(
             self.make_rate_matrix(),
             self.make_branch_lengths(),
             self.make_equilibrium_frequencies()
         )
-        return evoten.model.loglik(
+        return model.loglik(
             inputs,
             self.tree_handler,
             transition_probs,
@@ -1264,7 +1331,7 @@ class EvotenModel(tf.keras.Model):
 class TestKerasModel(unittest.TestCase):
 
     def setUp(self):
-        util.set_backend("tensorflow")
+        set_backend("tensorflow")
 
     def test_jit_compile_model(self):
         # Load a tree
@@ -1303,6 +1370,127 @@ class TestKerasModel(unittest.TestCase):
             steps_per_epoch=1
         )
 
+
+class TestUtil(unittest.TestCase):
+
+    def test_parse_rate_model(self):
+        R, pi, s = util.parse_rate_model("evoten/data/LG.model")
+        R2, pi2, s2 = util.parse_rate_model("test/data/LG_with_factor.model")
+        np.testing.assert_allclose(R, R2)
+        np.testing.assert_allclose(pi, pi2)
+        np.testing.assert_allclose(s, 1.0)
+        np.testing.assert_allclose(s2, 0.7)
+        np.testing.assert_allclose(
+            R,
+            np.array([
+                [0.000000,0.425093,0.276818,0.395144,2.489084,0.969894,
+                 1.038545,2.066040,0.358858,0.149830,0.395337,0.536518,
+                 1.124035,0.253701,1.177651,4.727182,2.139501,0.180717,
+                 0.218959,2.547870],
+                [0.425093,0.000000,0.751878,0.123954,0.534551,2.807908,
+                 0.363970,0.390192,2.426601,0.126991,0.301848,6.326067,
+                 0.484133,0.052722,0.332533,0.858151,0.578987,0.593607,
+                 0.314440,0.170887],
+                [0.276818,0.751878,0.000000,5.076149,0.528768,1.695752,
+                 0.541712,1.437645,4.509238,0.191503,0.068427,2.145078,
+                 0.371004,0.089525,0.161787,4.008358,2.000679,0.045376,
+                 0.612025,0.083688],
+                [0.395144,0.123954,5.076149,0.000000,0.062556,0.523386,
+                 5.243870,0.844926,0.927114,0.010690,0.015076,0.282959,
+                 0.025548,0.017416,0.394456,1.240275,0.425860,0.029890,
+                 0.135107,0.037967],
+                [2.489084,0.534551,0.528768,0.062556,0.000000,0.084808,
+                 0.003499,0.569265,0.640543,0.320627,0.594007,0.013266,
+                 0.893680,1.105251,0.075382,2.784478,1.143480,0.670128,
+                 1.165532,1.959291],
+                [0.969894,2.807908,1.695752,0.523386,0.084808,0.000000,
+                 4.128591,0.267959,4.813505,0.072854,0.582457,3.234294,
+                 1.672569,0.035855,0.624294,1.223828,1.080136,0.236199,
+                 0.257336,0.210332],
+                [1.038545,0.363970,0.541712,5.243870,0.003499,4.128591,
+                 0.000000,0.348847,0.423881,0.044265,0.069673,1.807177,
+                 0.173735,0.018811,0.419409,0.611973,0.604545,0.077852,
+                 0.120037,0.245034],
+                [2.066040,0.390192,1.437645,0.844926,0.569265,0.267959,
+                 0.348847,0.000000,0.311484,0.008705,0.044261,0.296636,
+                 0.139538,0.089586,0.196961,1.739990,0.129836,0.268491,
+                 0.054679,0.076701],
+                [0.358858,2.426601,4.509238,0.927114,0.640543,4.813505,
+                 0.423881,0.311484,0.000000,0.108882,0.366317,0.697264,
+                 0.442472,0.682139,0.508851,0.990012,0.584262,0.597054,
+                 5.306834,0.119013],
+                [0.149830,0.126991,0.191503,0.010690,0.320627,0.072854,
+                 0.044265,0.008705,0.108882,0.000000,4.145067,0.159069,
+                 4.273607,1.112727,0.078281,0.064105,1.033739,0.111660,
+                 0.232523,10.649107],
+                [0.395337,0.301848,0.068427,0.015076,0.594007,0.582457,
+                 0.069673,0.044261,0.366317,4.145067,0.000000,0.137500,
+                 6.312358,2.592692,0.249060,0.182287,0.302936,0.619632,
+                 0.299648,1.702745],
+                [0.536518,6.326067,2.145078,0.282959,0.013266,3.234294,
+                 1.807177,0.296636,0.697264,0.159069,0.137500,0.000000,
+                 0.656604,0.023918,0.390322,0.748683,1.136863,0.049906,
+                 0.131932,0.185202],
+                [1.124035,0.484133,0.371004,0.025548,0.893680,1.672569,
+                 0.173735,0.139538,0.442472,4.273607,6.312358,0.656604,
+                 0.000000,1.798853,0.099849,0.346960,2.020366,0.696175,
+                 0.481306,1.898718],
+                [0.253701,0.052722,0.089525,0.017416,1.105251,0.035855,
+                 0.018811,0.089586,0.682139,1.112727,2.592692,0.023918,
+                 1.798853,0.000000,0.094464,0.361819,0.165001,2.457121,
+                 7.803902,0.654683],
+                [1.177651,0.332533,0.161787,0.394456,0.075382,0.624294,
+                 0.419409,0.196961,0.508851,0.078281,0.249060,0.390322,
+                 0.099849,0.094464,0.000000,1.338132,0.571468,0.095131,
+                 0.089613,0.296501],
+                [4.727182,0.858151,4.008358,1.240275,2.784478,1.223828,
+                 0.611973,1.739990,0.990012,0.064105,0.182287,0.748683,
+                 0.346960,0.361819,1.338132,0.000000,6.472279,0.248862,
+                 0.400547,0.098369],
+                [2.139501,0.578987,2.000679,0.425860,1.143480,1.080136,
+                 0.604545,0.129836,0.584262,1.033739,0.302936,1.136863,
+                 2.020366,0.165001,0.571468,6.472279,0.000000,0.140825,
+                 0.245841,2.188158],
+                [0.180717,0.593607,0.045376,0.029890,0.670128,0.236199,
+                 0.077852,0.268491,0.597054,0.111660,0.619632,0.049906,
+                 0.696175,2.457121,0.095131,0.248862,0.140825,0.000000,
+                 3.151815,0.189510],
+                [0.218959,0.314440,0.612025,0.135107,1.165532,0.257336,
+                 0.120037,0.054679,5.306834,0.232523,0.299648,0.131932,
+                 0.481306,7.803902,0.089613,0.400547,0.245841,3.151815,
+                 0.000000,0.249313],
+                [2.547870,0.170887,0.083688,0.037967,1.959291,0.210332,
+                 0.245034,0.076701,0.119013,10.649107,1.702745,0.185202,
+                 1.898718,0.654683,0.296501,0.098369,2.188158,0.189510,
+                 0.249313,0.000000]
+            ])
+        )
+
+    def test_write_rate_model(self):
+        import tempfile
+        R, pi, s = util.parse_rate_model("test/data/LG_with_factor.model")
+        with tempfile.NamedTemporaryFile(suffix=".model", delete=True) as tmp:
+            util.write_rate_model(tmp.name, R, pi, s)
+            tmp.flush()
+            R2, pi2, s2 = util.parse_rate_model(tmp.name)
+        np.testing.assert_allclose(R, R2)
+        np.testing.assert_allclose(pi, pi2)
+        np.testing.assert_allclose(s, s2)
+
+    def test_permute_rate_model(self):
+        R, pi, s = util.parse_rate_model("evoten/data/LG.model")
+        alphabet = "ARNDCQEGHILKMFPSTWYV"
+        # Permute the alphabet, e.g., reverse order
+        new_alphabet = alphabet[::-1]
+        R_perm, pi_perm = util.permute_rate_model(
+            R, pi, alphabet, new_alphabet
+        )
+        # Permuting back should recover the original
+        R_recover, pi_recover = util.permute_rate_model(
+            R_perm, pi_perm, new_alphabet, alphabet
+        )
+        np.testing.assert_allclose(R, R_recover)
+        np.testing.assert_allclose(pi, pi_recover)
 
 
 class TestTupleAlignment(unittest.TestCase):
