@@ -1,9 +1,9 @@
+from collections import Counter
 from collections.abc import Sequence
 from contextlib import contextmanager
 from importlib import resources
 from pathlib import Path
-from typing import Iterator
-from collections import Counter
+from typing import IO, Iterator
 
 import numpy as np
 
@@ -131,9 +131,9 @@ def write_rate_model(
         if scaling_factor != 1.0:
             f.write(str(scaling_factor) + '\n')
 
-
-
-def tuple_alignment(sequences, k=3, gap_symbols='-'):
+def tuple_alignment(
+    sequences: list[str], k: int = 3, gap_symbols: str = '-'
+) -> list[str]:
     """
     Construct a tuple alignment from a multiple sequence alignment (MSA).
 
@@ -167,7 +167,9 @@ def tuple_alignment(sequences, k=3, gap_symbols='-'):
     seq_tuples = []
     for s in sequences:
         nongap = [i for i, c in enumerate(s) if c not in gap_symbols]
-        tuples_in_seq = {tuple(nongap[j:j+k]) for j in range(len(nongap) - k + 1)}
+        tuples_in_seq = {
+            tuple(nongap[j:j+k]) for j in range(len(nongap) - k + 1)
+        }
         seq_tuples.append(tuples_in_seq)
 
     # Step 3-4: keep tuples present in >=2 rows
@@ -188,14 +190,12 @@ def tuple_alignment(sequences, k=3, gap_symbols='-'):
         result.append(''.join(row))
     return result
 
-
 _BASE_TO_INT = {'a': 0, 'c': 1, 'g': 2, 't': 3,
                 'A': 0, 'C': 1, 'G': 2, 'T': 3}
 
 _INT_TO_BASE = ['a', 'c', 'g', 't']
 
-
-def tuple_labels(k):
+def tuple_labels(k: int) -> list[str]:
     """Return the list of 4**k k-mer strings in base-4 index order.
 
     Index i corresponds to the k-mer whose base-4 digits (most-significant
@@ -220,8 +220,9 @@ def tuple_labels(k):
         labels.append(''.join(reversed(chars)))
     return labels
 
-
-def print_tuple_rate_matrix(Q, k, label=None, file=None):
+def print_tuple_rate_matrix(
+    Q: np.ndarray, k: int, label: str | None = None, file: IO[str] | None = None
+) -> None:
     """Pretty-print a rate matrix with k-mer row/column labels.
 
     Args:
@@ -242,8 +243,12 @@ def print_tuple_rate_matrix(Q, k, label=None, file=None):
         row_str = '  '.join(f'{Q[i, j]:{col_w}.4f}' for j in range(len(labs)))
         print(f'{row_lab}  {row_str}', file=out)
 
-
-def print_tuple_stationary(pi, k, label=None, file=None):
+def print_tuple_stationary(
+    pi: np.ndarray,
+    k: int,
+    label: str | None = None,
+    file: IO[str] | None = None,
+) -> None:
     """Pretty-print a stationary distribution with k-mer labels.
 
     Args:
@@ -260,8 +265,12 @@ def print_tuple_stationary(pi, k, label=None, file=None):
     for lab, val in zip(labs, pi):
         print(f'  {lab}: {val:.6f}', file=out)
 
-
-def encode_tuple_alignment(ta, k=3, gap_symbols='-', gap_separate_state=0):
+def encode_tuple_alignment(
+    ta: list[str],
+    k: int = 3,
+    gap_symbols: str = '-',
+    gap_separate_state: int = 0,
+) -> np.ndarray:
     """
     One-hot encode a tuple alignment produced by tuple_alignment().
 
@@ -308,8 +317,13 @@ def encode_tuple_alignment(ta, k=3, gap_symbols='-', gap_separate_state=0):
                 pass  # ambiguous base (e.g. 'n') → leave as all-ones
     return result
 
-
-def tuple_array(sequences, k=3, gap_symbols='-', gap_separate_state=0, gap_class=None):
+def tuple_array(
+    sequences: list[str],
+    k: int = 3,
+    gap_symbols: str = '-',
+    gap_separate_state: int = 0,
+    gap_class: np.array | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Directly compute the one-hot encoded tuple alignment array.
 
