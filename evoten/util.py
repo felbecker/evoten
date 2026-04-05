@@ -322,7 +322,7 @@ def tuple_array(
     k: int = 3,
     gap_symbols: str = '-',
     gap_separate_state: int = 0,
-    gap_class: np.array | None = None
+    gap_class: np.ndarray | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Directly compute the one-hot encoded tuple alignment array.
