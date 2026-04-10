@@ -126,7 +126,8 @@ class TreeHandler():
         return self.get_values_by_height(self.parent_indices, height)
 
 
-    def get_values_by_height(self, kernel, height, leaves_included=True):
+    def get_values_by_height(self, kernel, height, leaves_included=True,
+                             indexes_branches=False):
         """ Retrieves all values from the leftmost axis of a tensor
         corresponding to all nodes with a given height.
 
@@ -138,6 +139,12 @@ class TreeHandler():
             height: Height of the subtree rooted at a node.
             leaves_included: If False, the method will assume a kernel if shape
                 (num_nodes-num_leaves, ...) and height=0 is invalid.
+            indexes_branches: If True, the kernel has one entry per branch
+                (edge), e.g. branch lengths or transition probabilities. This
+                enables the stratified fast path when the tree is stratified:
+                a compact kernel of shape (num_strata, ...) is gathered via
+                branch_to_stratum instead of sliced directly. Must be False
+                for node-indexed kernels (e.g. anc_logliks).
 
         Returns:
             Tensor of shape (layer_size, ...) representing the branch lengths
@@ -150,16 +157,8 @@ class TreeHandler():
         # Stratified transition-probability fast path:
         # When a compact tp tensor of shape (num_strata, M, d, d) is passed
         # instead of the full tp (shape (num_nodes-1, M, d, d)), gather the
-        # correct rows using branch_to_stratum.  The conditions are:
-        #   - leaves_included=True  (tp is always called this way; anc_logliks
-        #     — the only other large tensor — is always called with False)
-        #   - is_stratified is True
-        #   - kernel's first dimension matches num_strata (not num_nodes-1)
-        if (leaves_included
-                and self.is_stratified
-                and hasattr(kernel, 'shape')
-                and len(kernel.shape) >= 1
-                and int(kernel.shape[0]) == self.num_strata):
+        # correct rows using branch_to_stratum.
+        if (indexes_branches and leaves_included and self.is_stratified):
             # n=0 when leaves_included=True, so the branch slice is [k-s:k]
             layer_indices = self.branch_to_stratum[k-s:k]
             return backend.gather(kernel, layer_indices)
@@ -361,7 +360,7 @@ class TreeHandler():
             return
 
         blen = self.branch_lengths[:, 0]               # (num_branches,)
-        quantile_pos = np.linspace(0.0, 1.0, K)
+        quantile_pos = np.linspace(0.0, 1.0, K) # problematic when there are length outliers
         strata_vals = np.quantile(blen, quantile_pos)  # (K,)
 
         # Assign each branch to its nearest stratum representative

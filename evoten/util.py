@@ -397,7 +397,7 @@ def tuple_array(
         result[:, :, 4 ** k + 1] = 1.0  # default: gap_long (state 4^k+1)
     elif gap_separate_state >= 1:
         result = np.zeros((R, L, alphabet_size), dtype=default_dtype)
-        result[:, :, 4 ** k] = 1.0      # default: gap state (state 4^k)
+        result[:, :, 4 ** k] = 1.0 # default: gap state (state 4^k)
     else:
         result = np.ones((R, L, alphabet_size), dtype=default_dtype)  # neutral
 
