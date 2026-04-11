@@ -159,10 +159,21 @@ class TreeHandler():
         # instead of the full tp (shape (num_nodes-1, M, d, d)), gather the
         # correct rows using branch_to_stratum.
         if (indexes_branches and leaves_included and self.is_stratified):
-            # n=0 when leaves_included=True, so the branch slice is [k-s:k]
-            layer_indices = self.branch_to_stratum[k-s:k]
-            return backend.gather(kernel, layer_indices)
+            kernel_size = kernel.shape[0]  
+            full_branch_count = self.branch_to_stratum.shape[0]  
 
+            if kernel_size == self.num_strata:  
+                # n=0 when leaves_included=True, so the branch slice is [k-s:k]
+                layer_indices = self.branch_to_stratum[k-s:k]  
+                return backend.gather(kernel, layer_indices)  
+
+            if kernel_size != full_branch_count:  
+                raise ValueError(  
+                    "Expected a compact stratified branch kernel with first "  
+                    f"dimension {self.num_strata} or a full branch-indexed "  
+                    f"kernel with first dimension {full_branch_count}, got "  
+                    f"{kernel_size}."  
+                )
         return kernel[k-s-n:k-n]
 
 
@@ -353,6 +364,11 @@ class TreeHandler():
             max_num_explicit_blen: Maximum number of distinct representative
                 branch-length values to use.  Must be a positive integer.
         """
+        if max_num_explicit_blen is None or max_num_explicit_blen < 1:
+            raise ValueError(
+                f"max_num_explicit_blen must be a positive integer, "
+                f"got {max_num_explicit_blen!r}."
+            )
         num_branches = self.num_nodes - 1
         K = min(max_num_explicit_blen, num_branches)
         if K >= num_branches:

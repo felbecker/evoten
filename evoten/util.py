@@ -342,7 +342,7 @@ def tuple_array(
     With gap_separate_state=1: absent entries are one-hot at index 4**k
     (explicit gap state); ambiguous entries remain all-ones.
     With gap_separate_state=2: two gap states — gap_short at index 4**k,
-    gap_long at 4**k+1.  gap_class (see below) distinguishes them; absent
+    gap_long at 4**k+1.  gap_class (if not None) distinguishes them; absent
     entries default to gap_long.
 
     Args:
@@ -353,7 +353,7 @@ def tuple_array(
             (default 0).
         gap_class (np.ndarray or None): Integer array of shape (R, n_cols),
             dtype int8.  Values: 0=nucleotide, 1=gap_short, 2=gap_long/absent.
-            Required (and used) only when gap_separate_state == 2.
+            Used only when gap_separate_state == 2.
 
     Returns:
         result : np.ndarray, shape [R, L, 4**k + gap_separate_state], float32.
@@ -392,6 +392,8 @@ def tuple_array(
     alphabet_size = 4 ** k + gap_separate_state
 
     # Step 3: initialise result and fill one-hot entries per row
+    if gap_separate_state > 2:
+        raise ValueError("More than 2 gaps states not implemented.")
     if gap_separate_state >= 2:
         result = np.zeros((R, L, alphabet_size), dtype=default_dtype)
         result[:, :, 4 ** k + 1] = 1.0  # default: gap_long (state 4^k+1)
@@ -423,12 +425,12 @@ def tuple_array(
 
     # For gap_separate_state==2, upgrade gap_long→gap_short where gap_class==1.
     if gap_separate_state >= 2 and gap_class is not None:
-        for j, t in enumerate(valid_tuples):
-            col = t[0]   # first alignment column of this tuple
-            for r in range(R):
-                # only reclassify positions that are currently gap_long (not nucleotide)
-                if result[r, j, 4 ** k + 1] == 1.0 and gap_class[r, col] == 1:
-                    result[r, j, :] = 0.0
-                    result[r, j, 4 ** k] = 1.0   # gap_short
+        # Build an (R, L) mask for entries whose first tuple position is classified
+        # as gap_short, then only update those that are currently gap_long.
+        gap_short_mask = (gap_class[:, first_positions] == 1)
+        reclassify_mask = gap_short_mask & (result[:, :, 4 ** k + 1] == 1.0)
+        if np.any(reclassify_mask):
+            result[reclassify_mask, :] = 0.0
+            result[reclassify_mask, 4 ** k] = 1.0   # gap_short
 
     return result, first_positions
