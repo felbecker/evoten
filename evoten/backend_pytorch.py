@@ -47,6 +47,13 @@ class BackendTorch(Backend):
         return P
 
 
+    def make_transition_probs_ntr(self, rate_matrix, distances):
+        rate_matrix = _ensure_tensor(rate_matrix)
+        distances = _ensure_tensor(distances)
+        distances = distances[..., None, None]
+        return torch.linalg.matrix_exp(rate_matrix * distances)
+
+
     def make_branch_lengths(self, kernel):
         kernel = _ensure_tensor(kernel)
         return torch.nn.functional.softplus(kernel)

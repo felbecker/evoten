@@ -60,6 +60,22 @@ class Backend():
         )
 
 
+    def make_transition_probs_ntr(self, rate_matrix, distances):
+        """Compute P(t) = exp(Q*t) via matrix exponential (Padé approximation).
+
+        Works for any rate matrix Q, including non-time-reversible ones.
+        No stationary distribution needed.
+
+        Args:
+            rate_matrix: Rate matrix Q of shape (..., d, d).
+            distances: Evolutionary times of shape (...).
+
+        Returns:
+            Stack of probability matrices of shape (..., d, d).
+        """
+        return self.wrapped_backend.make_transition_probs_ntr(rate_matrix, distances)
+
+
     def make_branch_lengths(self, kernel):
         """
         Converts a kernel of parameters to positive branch lengths.

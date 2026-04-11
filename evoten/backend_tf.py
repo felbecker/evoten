@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 
 from evoten import backend, util, Backend
-from evoten.expm_gtr import expm_gtr
+from evoten.expm_gtr import expm_gtr, expm_ntr
 
 
 # Documentation in the base class. Hover over the method name to see the
@@ -32,6 +32,10 @@ class BackendTF(Backend):
         # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
         P = expm_gtr(rate_matrix, distances, equilibrium)
         return P
+
+
+    def make_transition_probs_ntr(self, rate_matrix, distances):
+        return expm_ntr(rate_matrix, distances)
 
 
     def make_branch_lengths(self, kernel):

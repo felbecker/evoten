@@ -128,6 +128,41 @@ def expm_gtr_from_decomp(decomp: GTRDecomp, t: tf.Tensor) -> tf.Tensor:
 
     return expQ
 
+def expm_ntr(Q: tf.Tensor, t: tf.Tensor) -> tf.Tensor:
+    """Compute P(t) = exp(Q*t) for a general rate matrix via Padé approximation.
+
+    Unlike expm_gtr, this does not assume time-reversibility and does not
+    require a stationary distribution.
+
+    Args:
+        Q: Tensor of shape (..., d, d), batch of rate matrices.
+        t: Tensor of shape (...), evolutionary times. Broadcasting against Q's
+           leading dimensions is supported (e.g. Q (1,d,d), t (T,) → (T,d,d)).
+
+    Returns:
+        Tensor of shape (..., d, d) equal to exp(Q*t).
+    """
+    Q = tf.convert_to_tensor(Q)
+    t = tf.convert_to_tensor(t, dtype=Q.dtype)
+    t = tf.maximum(t, tf.cast(0.0, t.dtype))
+
+    # Expand t to (..., 1, 1) so Q * t_matrix broadcasts correctly
+    t_matrix = tf.expand_dims(tf.expand_dims(t, -1), -1)
+    P = tf.linalg.expm(Q * t_matrix)
+
+    # Reproject to row-stochastic (small numerical violations expected)
+    P = tf.maximum(P, tf.cast(0.0, P.dtype))
+    row_sums = tf.reduce_sum(P, axis=-1, keepdims=True)
+    P = P / tf.maximum(row_sums, tf.cast(1e-16, P.dtype))
+
+    # Return identity for near-zero branch lengths
+    eye = tf.eye(tf.shape(P)[-1], batch_shape=tf.shape(P)[:-2], dtype=P.dtype)
+    zero_tol = tf.cast(_t_zero_tol(P.dtype), P.dtype)
+    near_zero_t = tf.abs(t) <= zero_tol
+    near_zero_t = tf.expand_dims(tf.expand_dims(near_zero_t, -1), -1)
+    return tf.where(near_zero_t, eye, P)
+
+
 def expm_gtr(
     Q: tf.Tensor, t: tf.Tensor, pi: tf.Tensor, epsilon: float = 1e-16
 ) -> tf.Tensor:

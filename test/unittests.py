@@ -523,6 +523,51 @@ class TestBackendTF(unittest.TestCase, TestBackend):
         from evoten.backend_tf import BackendTF
         self._test_traverse_branch_transposed(BackendTF())
 
+    def test_transition_probs_ntr_vs_gtr(self):
+        """GTR eigendecomp and NTR expm (Padé) must agree on GTR matrices."""
+        import time
+        import evoten
+        evoten.set_backend("tensorflow")
+        b = evoten.backend
+
+        rng = np.random.default_rng(0)
+        d, n_t = 20, 32
+
+        # Random symmetric exchangeability matrix (1, d, d)
+        R_raw = rng.exponential(1.0, size=(d, d)).astype(np.float64)
+        R_raw = (R_raw + R_raw.T) / 2.
+        np.fill_diagonal(R_raw, 0.)
+        R = R_raw[np.newaxis]               # (1, d, d)
+
+        # Random stationary distribution (1, d)
+        pi_raw = rng.exponential(1.0, size=(1, d)).astype(np.float64)
+        pi = pi_raw / pi_raw.sum(axis=-1, keepdims=True)  # (1, d)
+
+        Q = b.make_rate_matrix(R, pi)       # (1, d, d)
+
+        # 32 log-spaced time values covering 0.01 – 10 substitutions/site
+        t = np.logspace(-2, 1, n_t).astype(np.float64)   # (32,)
+        # broadcasting: Q (1,d,d) × t (32,) → P (32,d,d) for both methods
+
+        # warm-up (TF traces on first call)
+        _ = b.make_transition_probs(Q, t[:1], pi)
+        _ = b.make_transition_probs_ntr(Q, t[:1])
+
+        REPS = 5
+        t0 = time.perf_counter()
+        for _ in range(REPS):
+            P_gtr = b.make_transition_probs(Q, t, pi).numpy()
+        t1 = time.perf_counter()
+        for _ in range(REPS):
+            P_ntr = b.make_transition_probs_ntr(Q, t).numpy()
+        t2 = time.perf_counter()
+
+        print(f"\n[NTR test] GTR eigendecomp : {(t1-t0)/REPS*1e3:.1f} ms/call")
+        print(f"[NTR test] NTR expm (Padé) : {(t2-t1)/REPS*1e3:.1f} ms/call")
+
+        np.testing.assert_allclose(P_gtr, P_ntr, atol=1e-4,
+            err_msg="GTR and NTR transition matrices diverge beyond tolerance")
+
 
 class TestBackendPytorch(unittest.TestCase, TestBackend):
 
