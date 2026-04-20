@@ -314,6 +314,70 @@ class TestTree(unittest.TestCase):
                 self.assertEqual(t.get_index(name), i-len(names))
 
 
+    def test_stratify_branchlen_compact_kernel(self):
+        """Compact (stratified) kernel gathering must match full-kernel slicing."""
+        # simple3.tree has 10 branches with distinct lengths, giving enough
+        # variety for stratification to produce a non-trivial mapping.
+        t = TreeHandler.read("test/data/simple3.tree")
+        num_branches = t.num_nodes - 1  # 10
+
+        M, d = 3, 4
+        rng = np.random.default_rng(0)
+
+        K = 4  # fewer strata than branches → stratification is active
+        t.stratify_branchlen(K)
+        self.assertTrue(t.is_stratified)
+        self.assertEqual(t.num_strata, K)
+
+        # Build compact kernel: one row per stratum with arbitrary distinct values.
+        compact_kernel = rng.random(
+            (K, M, d, d), dtype=np.float64
+        ).astype(util.default_dtype)
+
+        # Derive the equivalent full kernel: each branch gets its stratum's row.
+        # get_values_by_height on the full kernel (plain-slice path) must then
+        # return the same result as the compact gather path.
+        full_kernel = compact_kernel[t.branch_to_stratum]  # (num_branches, M, d, d)
+
+        # For each height layer, compact gathering must reproduce full slicing.
+        for h in range(t.height + 1):
+            t.is_stratified = False
+            full_slice = t.get_values_by_height(
+                full_kernel, h, indexes_branches=True
+            )
+            t.is_stratified = True
+            compact_slice = t.get_values_by_height(
+                compact_kernel, h, indexes_branches=True
+            )
+            full_np   = np.array(full_slice)
+            compact_np = np.array(compact_slice)
+            self.assertEqual(full_np.shape, compact_np.shape,
+                             msg=f"shape mismatch at height {h}")
+            np.testing.assert_array_equal(
+                compact_np, full_np,
+                err_msg=f"compact kernel mismatch at height {h}"
+            )
+
+    def test_stratify_branchlen_noop_when_k_ge_branches(self):
+        """stratify_branchlen must set is_stratified=False when K >= num_branches."""
+        t = TreeHandler.read("test/data/simple3.tree")
+        num_branches = t.num_nodes - 1
+        t.stratify_branchlen(num_branches)      # exactly equal → no reduction
+        self.assertFalse(t.is_stratified)
+        t.stratify_branchlen(num_branches + 5)  # larger → no reduction
+        self.assertFalse(t.is_stratified)
+
+    def test_stratify_branchlen_invalid_kernel_raises(self):
+        """get_values_by_height must raise ValueError for a kernel whose first
+        dimension is neither num_strata nor num_branches."""
+        t = TreeHandler.read("test/data/simple3.tree")
+        t.stratify_branchlen(4)
+        self.assertTrue(t.is_stratified)
+        bad_kernel = np.zeros((7,), dtype=util.default_dtype)  # neither 4 nor 10
+        with self.assertRaises(ValueError):
+            t.get_values_by_height(bad_kernel, 0, indexes_branches=True)
+
+
 class TestBackend():
 
     def _test_branch_lengths(self, backend, decode=False):

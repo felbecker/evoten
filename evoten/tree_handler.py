@@ -126,7 +126,8 @@ class TreeHandler():
         return self.get_values_by_height(self.parent_indices, height)
 
 
-    def get_values_by_height(self, kernel, height, leaves_included=True):
+    def get_values_by_height(self, kernel, height, leaves_included=True,
+                             indexes_branches=False):
         """ Retrieves all values from the leftmost axis of a tensor
         corresponding to all nodes with a given height.
 
@@ -138,6 +139,12 @@ class TreeHandler():
             height: Height of the subtree rooted at a node.
             leaves_included: If False, the method will assume a kernel if shape
                 (num_nodes-num_leaves, ...) and height=0 is invalid.
+            indexes_branches: If True, the kernel has one entry per branch
+                (edge), e.g. branch lengths or transition probabilities. This
+                enables the stratified fast path when the tree is stratified:
+                a compact kernel of shape (num_strata, ...) is gathered via
+                branch_to_stratum instead of sliced directly. Must be False
+                for node-indexed kernels (e.g. anc_logliks).
 
         Returns:
             Tensor of shape (layer_size, ...) representing the branch lengths
@@ -146,6 +153,27 @@ class TreeHandler():
         k = self.cum_layer_sizes[height]
         s = self.layer_sizes[height]
         n = int(not leaves_included) * self.layer_sizes[0]
+
+        # Stratified transition-probability fast path:
+        # When a compact tp tensor of shape (num_strata, M, d, d) is passed
+        # instead of the full tp (shape (num_nodes-1, M, d, d)), gather the
+        # correct rows using branch_to_stratum.
+        if (indexes_branches and leaves_included and self.is_stratified):
+            kernel_size = kernel.shape[0]  
+            full_branch_count = self.branch_to_stratum.shape[0]  
+
+            if kernel_size == self.num_strata:  
+                # n=0 when leaves_included=True, so the branch slice is [k-s:k]
+                layer_indices = self.branch_to_stratum[k-s:k]  
+                return backend.gather(kernel, layer_indices)  
+
+            if kernel_size != full_branch_count:  
+                raise ValueError(  
+                    "Expected a compact stratified branch kernel with first "  
+                    f"dimension {self.num_strata} or a full branch-indexed "  
+                    f"kernel with first dimension {full_branch_count}, got "  
+                    f"{kernel_size}."  
+                )
         return kernel[k-s-n:k-n]
 
 
@@ -295,6 +323,7 @@ class TreeHandler():
                 self.parent_indices[self.nodes[clade.name].index] = i
 
         if mods_applied or force_reset_init_lengths:
+            self.is_stratified = False
             self.setup_init_branch_lengths()
             # initially, get_branch_lengths will return branch lengths
             # parsed from the tree file
@@ -314,6 +343,54 @@ class TreeHandler():
             for child in clade:
                 L = child.branch_length
                 self.init_branch_lengths[self.nodes[child.name].index] = L
+
+
+    def stratify_branchlen(self, max_num_explicit_blen):
+        """ Partitions branch lengths into quantile strata to reduce computation.
+
+        After calling this, make_transition_probs can be called with
+        strata_blen_values (shape (K, 1)) instead of the full branch_lengths
+        (shape (num_nodes-1, 1)).  get_values_by_height then automatically
+        gathers the correct rows for each height layer from the compact tensor.
+
+        Has no effect (sets is_stratified=False) when max_num_explicit_blen
+        >= num_nodes-1, i.e. when no reduction is possible.
+
+        This method should only be called when branch lengths are fixed (not
+        subject to optimisation), because stratification bakes in the current
+        branch lengths.
+
+        Args:
+            max_num_explicit_blen: Maximum number of distinct representative
+                branch-length values to use.  Must be a positive integer.
+        """
+        if max_num_explicit_blen is None or max_num_explicit_blen < 1:
+            raise ValueError(
+                f"max_num_explicit_blen must be a positive integer, "
+                f"got {max_num_explicit_blen!r}."
+            )
+        num_branches = self.num_nodes - 1
+        K = min(max_num_explicit_blen, num_branches)
+        if K >= num_branches:
+            self.is_stratified = False
+            return
+
+        blen = self.branch_lengths[:, 0]               # (num_branches,)
+        quantile_pos = np.linspace(0.0, 1.0, K) # problematic when there are length outliers
+        strata_vals = np.quantile(blen, quantile_pos)  # (K,)
+
+        # Assign each branch to its nearest stratum representative
+        dists = np.abs(
+            blen[:, np.newaxis] - strata_vals[np.newaxis, :]
+        )                                              # (num_branches, K)
+        branch_to_stratum = np.argmin(dists, axis=1).astype(np.int32)
+
+        self.num_strata = K
+        self.strata_blen_values = strata_vals[:, np.newaxis].astype(
+            default_dtype
+        )                                              # (K, 1)
+        self.branch_to_stratum = branch_to_stratum     # (num_branches,)
+        self.is_stratified = True
 
 
     def collapse(self, node_name):

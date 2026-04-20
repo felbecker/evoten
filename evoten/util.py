@@ -321,7 +321,8 @@ def tuple_array(
     sequences: list[str],
     k: int = 3,
     gap_symbols: str = '-',
-    gap_separate_state: int = 0
+    gap_separate_state: int = 0,
+    gap_class: np.ndarray | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Directly compute the one-hot encoded tuple alignment array.
@@ -338,16 +339,21 @@ def tuple_array(
 
     With gap_separate_state=0 (default): absent/gap entries are all-ones
     (neutral for Felsenstein's pruning algorithm).
-    With gap_separate_state>=1: absent entries are one-hot at index 4**k
+    With gap_separate_state=1: absent entries are one-hot at index 4**k
     (explicit gap state); ambiguous entries remain all-ones.
+    With gap_separate_state=2: two gap states — gap_short at index 4**k,
+    gap_long at 4**k+1.  gap_class (if not None) distinguishes them; absent
+    entries default to gap_long.
 
     Args:
         sequences (List[str]): MSA rows, all the same length.
         k (int): Tuple length; k=3 for codons.
         gap_symbols (str): Characters treated as gaps (default '-').
         gap_separate_state (int): Extra gap states appended to the alphabet
-            (default 0).  If >= 1, absent tuple positions are encoded as
-            one-hot at index 4**k rather than all-ones.
+            (default 0).
+        gap_class (np.ndarray or None): Integer array of shape (R, n_cols),
+            dtype int8.  Values: 0=nucleotide, 1=gap_short, 2=gap_long/absent.
+            Used only when gap_separate_state == 2.
 
     Returns:
         result : np.ndarray, shape [R, L, 4**k + gap_separate_state], float32.
@@ -386,9 +392,14 @@ def tuple_array(
     alphabet_size = 4 ** k + gap_separate_state
 
     # Step 3: initialise result and fill one-hot entries per row
-    if gap_separate_state >= 1:
+    if gap_separate_state > 2:
+        raise ValueError("More than 2 gaps states not implemented.")
+    if gap_separate_state >= 2:
         result = np.zeros((R, L, alphabet_size), dtype=default_dtype)
-        result[:, :, 4 ** k] = 1.0   # default: gap state
+        result[:, :, 4 ** k + 1] = 1.0  # default: gap_long (state 4^k+1)
+    elif gap_separate_state >= 1:
+        result = np.zeros((R, L, alphabet_size), dtype=default_dtype)
+        result[:, :, 4 ** k] = 1.0 # default: gap state (state 4^k)
     else:
         result = np.ones((R, L, alphabet_size), dtype=default_dtype)  # neutral
 
@@ -411,5 +422,15 @@ def tuple_array(
             result[r, js_v, idxs_a] = 1.0
         if js_ambig:
             result[r, np.array(js_ambig, dtype=np.intp), :] = 1.0
+
+    # For gap_separate_state==2, upgrade gap_long→gap_short where gap_class==1.
+    if gap_separate_state >= 2 and gap_class is not None:
+        # Build an (R, L) mask for entries whose first tuple position is classified
+        # as gap_short, then only update those that are currently gap_long.
+        gap_short_mask = (gap_class[:, first_positions] == 1)
+        reclassify_mask = gap_short_mask & (result[:, :, 4 ** k + 1] == 1.0)
+        if np.any(reclassify_mask):
+            result[reclassify_mask, :] = 0.0
+            result[reclassify_mask, 4 ** k] = 1.0   # gap_short
 
     return result, first_positions

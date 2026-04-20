@@ -4,6 +4,7 @@ dist
 # VS Code
 .vscode/
 hidten.code-workspace
+python.80s*
 
 # Sphinx documentation
 docs/_build/

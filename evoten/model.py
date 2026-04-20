@@ -66,7 +66,7 @@ def compute_ancestral_probabilities(
 
         # traverse all edges (parent(X), X) for all nodes X of same height in
         # parallel
-        P = tree_handler.get_values_by_height(transition_probs, height)
+        P = tree_handler.get_values_by_height(transition_probs, height, indexes_branches=True)
         T = backend.traverse_branch(X, P)
 
         # aggregate over child nodes and add to anc_logliks
@@ -166,7 +166,7 @@ def propagate(
 
         # traverse all edges (parent(X), X) for all nodes X of same height in
         # parallel
-        P = tree_handler.get_values_by_height(transition_probs, height)
+        P = tree_handler.get_values_by_height(transition_probs, height, indexes_branches=True)
         U = backend.traverse_branch(
             cur_dist, P, transposed=True, logarithmic=False
         )
@@ -251,7 +251,7 @@ def compute_ancestral_marginals(
 
         # traverse upwards all edges (parent(u), u) for all nodes u of same
         # height
-        P = tree_handler.get_values_by_height(transition_probs, height)
+        P = tree_handler.get_values_by_height(transition_probs, height, indexes_branches=True)
         M = backend.traverse_branch(X, P)
         upward_messages.append(M)
 
@@ -296,7 +296,7 @@ def compute_ancestral_marginals(
     for height in range(tree_handler.height-1, 0, -1):
 
         # compute updates for the beliefs
-        P = tree_handler.get_values_by_height(transition_probs, height)
+        P = tree_handler.get_values_by_height(transition_probs, height, indexes_branches=True)
         U = backend.traverse_branch(
             downward_messages_by_cur_height, P, transposed=True
         )
