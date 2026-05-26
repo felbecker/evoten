@@ -40,15 +40,42 @@ def LG(
 
     Args:
         alphabet: A string with the amino acids in the desired order.
+        dtype: The desired dtype for the returned arrays.
 
     Returns:
-        symmetric d x d  tensor of exchangeabilities and d matrix of
+        symmetric d x d  tensor of exchangeabilities and d vector of
         equilibrium frequencies.
     """
     with util.data_path("LG.model") as path:
         R, p, s = util.parse_rate_model(path)
     # TODO: s is omitted for now, but can be used in the future
     R, pi = util.permute_rate_model(R, p, "ARNDCQEGHILKMFPSTWYV", alphabet)
+    R = R.astype(dtype)
+    pi = pi.astype(dtype)
+    return R, pi
+
+def foldseek_3Di(
+    alphabet:str = "ACDEFGHIKLMNPQRSTVWY",
+    dtype: type[np.floating] = util.default_dtype
+) -> tuple[np.ndarray, np.ndarray]:
+    """ Returns the exchangeabilities and equilibrium frequencies for a model
+    derived from Foldseek's 3Di substitution matrix.
+
+    Based on https://github.com/steineggerlab/foldseek/blob/master/data/mat3di.out
+    See `docs/misc/3Di_Q_from_P.ipynb` for construction details.
+
+    Args:
+        alphabet: A string with the amino acids in the desired order.
+        dtype: The desired dtype for the returned arrays.
+
+    Returns:
+        symmetric d x d  tensor of exchangeabilities and d vector of
+        equilibrium frequencies.
+    """
+    with util.data_path("3di.model") as path:
+        R, p, s = util.parse_rate_model(path)
+    # TODO: s is omitted for now, but can be used in the future
+    R, pi = util.permute_rate_model(R, p, "ACDEFGHIKLMNPQRSTVWY", alphabet)
     R = R.astype(dtype)
     pi = pi.astype(dtype)
     return R, pi
