@@ -196,7 +196,7 @@ def compute_ancestral_marginals(
 ):
     """
     Compute all marginal distributions at internal (ancestral) nodes u in the
-    given leave data and the tree. Formally, the method computes
+    given leaf data and the tree. Formally, the method computes
     sP(u | leaves, tree) for all u that are not leaves.
 
     * Broadcasting is supported for this dimension.
