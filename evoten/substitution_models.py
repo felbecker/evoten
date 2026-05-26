@@ -72,7 +72,7 @@ def foldseek_3Di(
         symmetric d x d  tensor of exchangeabilities and d vector of
         equilibrium frequencies.
     """
-    with util.data_path("3di.model") as path:
+    with util.data_path("3Di.model") as path:
         R, p, s = util.parse_rate_model(path)
     # TODO: s is omitted for now, but can be used in the future
     R, pi = util.permute_rate_model(R, p, "ACDEFGHIKLMNPQRSTVWY", alphabet)
