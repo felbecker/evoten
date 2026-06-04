@@ -28,6 +28,14 @@ docs = [
     "myst-parser>=2.0",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["evoten*"]
+exclude = ["evoten.test*"]
+
+[tool.setuptools.package-data]
+"evoten" = ["data/*"]
+
 [project.urls]
 Homepage = "https://github.com/felbecker/evoten"
 Issues = "https://github.com/felbecker/evoten/issues"
