@@ -8,7 +8,7 @@ version = "0.0.1"
 authors = [
   { name="Felix Becker", email="beckerfelix94@gmail.com" },
 ]
-description = "Vectorized, differentiable computation of tree likelihoods supporting different computation backends."
+description = "Vectorized, differentiable computation of evolutionary models supporting different computation backends."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -29,8 +29,8 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/felbecker/TensorTree"
-Issues = "https://github.com/felbecker/TensorTree/issues"
+Homepage = "https://github.com/felbecker/evoten"
+Issues = "https://github.com/felbecker/evoten/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["evoten"]
