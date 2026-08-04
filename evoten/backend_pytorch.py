@@ -26,15 +26,14 @@ class BackendTorch(Backend):
         equilibrium = _ensure_tensor(equilibrium)
         Q = torch.mul(exchangeabilities, equilibrium[..., None, :])
         diag = torch.sum(Q, -1, True)
+        # Broadcast over any leading dimensions
         eye = torch.eye(diag.shape[-2], dtype=diag.dtype, device=diag.device)
-        eye = eye[None]
-        eye = eye.repeat(diag.shape[0], 1, 1)
-        Q -= diag * eye
+        Q = Q - diag * eye
         # normalize
         if normalized:
             mue = equilibrium[..., None] * diag
             mue = torch.sum(mue, dim=-2, keepdim=True)
-            Q /= torch.maximum(mue, torch.tensor(epsilon))
+            Q = Q / mue.clamp_min(epsilon)
         return Q
 
 
@@ -62,12 +61,12 @@ class BackendTorch(Backend):
 
 
     def make_symmetric_pos_semidefinite(self, kernel):
-        kernel_shape = kernel.shape
-        kernel = kernel.view(-1, kernel_shape[-2], kernel_shape[-1])
-        R = 0.5 * (kernel + kernel.permute((0,2,1))) #make symmetric
+        kernel = _ensure_tensor(kernel)
+        R = 0.5 * (kernel + kernel.transpose(-2, -1)) #make symmetric
         R = torch.nn.functional.softplus(R)
-        R -= torch.diag(torch.diagonal(R)) #zero diagonal
-        R = R.view(kernel_shape)
+        R = R - torch.diag_embed(
+            torch.diagonal(R, dim1=-2, dim2=-1)
+        ) #zero diagonal
         return R
 
 
