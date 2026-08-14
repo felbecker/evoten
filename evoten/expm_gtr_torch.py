@@ -8,6 +8,7 @@ eigendecomposition once, then exponentiate it for many branch lengths -- which
 the facade does not expose.
 """
 
+import warnings
 from typing import NamedTuple
 
 import torch
@@ -40,6 +41,30 @@ def _t_zero_tol(dtype: torch.dtype) -> float:
     return 1e-6
 
 
+#: Set once a CUDA ``eigh`` has failed, so later calls skip straight to the CPU
+#: instead of paying a failed cuSOLVER attempt per forward pass.
+_CUSOLVER_FAILED = False
+
+
+def _eigh(S: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """``torch.linalg.eigh``, falling back to the CPU when cuSOLVER fails.
+
+    cuSOLVER allocates its handle outside torch's caching allocator, so
+    ``cusolverDnCreate`` can fail under device memory pressure even though the
+    matrices themselves would fit easily. They are small enough here that the
+    CPU is a cheap fallback.
+    """
+    global _CUSOLVER_FAILED
+    if S.device.type == "cuda" and not _CUSOLVER_FAILED:
+        try:
+            return torch.linalg.eigh(S)
+        except RuntimeError as e:
+            _CUSOLVER_FAILED = True
+            warnings.warn(f"CUDA eigh failed ({e}); falling back to the CPU.")
+    eigvals, eigvecs = torch.linalg.eigh(S.cpu())
+    return eigvals.to(S.device), eigvecs.to(S.device)
+
+
 def precompute_gtr(
     Q: torch.Tensor, pi: torch.Tensor, epsilon: float = 1e-16
 ) -> GTRDecomp:
@@ -67,7 +92,7 @@ def precompute_gtr(
     S = S * sqrt_pi.unsqueeze(-1)
     S = 0.5 * (S + S.transpose(-2, -1))
 
-    eigvals, eigvecs = torch.linalg.eigh(S)
+    eigvals, eigvecs = _eigh(S)
 
     return GTRDecomp(eigvals, eigvecs, sqrt_pi, inv_sqrt_pi)
 
