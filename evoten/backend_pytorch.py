@@ -133,9 +133,8 @@ class BackendTorch(Backend):
         Y = torch.zeros(
             num_ancestral, *X.shape[1:], dtype=X.dtype, device=X.device
         )
-        I = parent_map.reshape(-1, *([1] * (X.ndim - 1))).expand(X.shape)
-        Y = Y.scatter_add(0, I, X)
-        return Y
+        # out of place (autograd-safe), index vector only (no expanded index)
+        return Y.index_add(0, parent_map, X)
 
 
     def loglik_from_root_logits(self, root_logits, equilibrium_logits):
@@ -190,3 +189,12 @@ class BackendTorch(Backend):
 
     def ensure_tensor(self, x):
         return _ensure_tensor(x)
+
+
+    def ensure_index(self, values, like):
+        device = like.device if isinstance(like, torch.Tensor) else None
+        return torch.as_tensor(np.asarray(values, dtype=np.int64), device=device)
+
+
+    def device_key(self, like):
+        return str(like.device) if isinstance(like, torch.Tensor) else "cpu"

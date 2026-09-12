@@ -183,3 +183,13 @@ class BackendTF(Backend):
 
     def ensure_tensor(self, x):
         return x
+
+
+    def ensure_index(self, values, like):
+        # numpy indices are accepted by tf.gather / unsorted_segment_sum and
+        # captured as constants in graphs; nothing to place.
+        return np.asarray(values, dtype=np.int32)
+
+
+    def device_key(self, like):
+        return "tf"

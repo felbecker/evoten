@@ -49,18 +49,23 @@ def compute_ancestral_probabilities(
     if len(transition_probs.shape) == 4:
         transition_probs = backend.expand(transition_probs, axis=-3)
 
-    # allocate a single chunk of memory for all internal nodes (no concat or
-    # masking required) add results as layers are processed
-    num_models = transition_probs.shape[1]
-    anc_logliks = backend.make_zeros(
-        leaves, num_models, tree_handler.num_anc
-    )
-
     # reorder the leaves to match the tree handler's internal order
     if leaf_names is None:
         X = leaves
     else:
         X = tree_handler.reorder(leaves, leaf_names)
+
+    # Level-routed pruning. Each height layer accumulates its partial
+    # log-likelihoods in its own tensor (layer_size, models, L, d), fed by the
+    # upward messages of its children, which may sit at any lower height; the
+    # routing is static (TreeHandler.level_routing) and its index vectors are
+    # cached as native tensors. Everything is out of place: no
+    # (num_anc, models, L, d) buffer is allocated and re-added per layer (the
+    # dominant memory traffic on deep trees), the partials are autograd-safe
+    # without recomputation, and the loop contains no numpy, so torch.compile
+    # can capture it.
+    layers = [None] * (tree_handler.height + 1)   # indexed by height; 1..height used
+    routing = tree_handler.routing_for(X)
 
     for height in range(tree_handler.height):
 
@@ -69,22 +74,25 @@ def compute_ancestral_probabilities(
         P = tree_handler.get_values_by_height(transition_probs, height, indexes_branches=True)
         T = backend.traverse_branch(X, P)
 
-        # aggregate over child nodes and add to anc_logliks
-        parent_indices = tree_handler.get_parent_indices_by_height(height)
-        Z = backend.aggregate_children_log_probs(
-            T,
-            parent_indices-tree_handler.num_leaves,
-            tree_handler.num_anc
-        )
-        anc_logliks += Z
+        # route the messages to the parents' layers and aggregate per parent
+        for parent_height, src, dst, src_is_identity, dst_is_identity in routing[height]:
+            Z = T if src_is_identity else backend.gather(T, src)
+            if not dst_is_identity:
+                Z = backend.aggregate_children_log_probs(
+                    Z, dst, tree_handler.layer_size(parent_height)
+                )
+            prev = layers[parent_height]
+            layers[parent_height] = Z if prev is None else prev + Z
 
         if height < tree_handler.height-1:
-            X = tree_handler.get_values_by_height(
-                anc_logliks, height+1, leaves_included=False
-            )
+            # complete: all children of these nodes have height <= `height`
+            X = layers[height+1]
 
     if return_only_root:
-        anc_logliks = anc_logliks[-1]
+        anc_logliks = layers[-1][0]
+    else:
+        # node indices are sorted by height, so the layers concatenate in order
+        anc_logliks = backend.concat(layers[1:], axis=0)
 
     if return_probabilities:
         return backend.probs_from_logits(anc_logliks)

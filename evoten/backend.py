@@ -254,6 +254,23 @@ class Backend():
         return self.wrapped_backend.ensure_tensor(x)
 
 
+    def ensure_index(self, values, like):
+        """
+        Converts a numpy integer index array to the backend's native index
+        type, placed on the device of the tensor ``like`` (where that matters).
+        Used by TreeHandler to convert its static index arrays once.
+        """
+        return self.wrapped_backend.ensure_index(values, like)
+
+
+    def device_key(self, like):
+        """
+        A hashable key identifying the device the tensor ``like`` lives on
+        (a constant for backends that place small constants themselves).
+        """
+        return self.wrapped_backend.device_key(like)
+
+
 
 def set_backend(backend_name = "tensorflow"):
     """ Loads one of the following backends: ["tensorflow", "pytorch"]

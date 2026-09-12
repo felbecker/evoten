@@ -252,3 +252,217 @@ def test_deep_tree_loglik_matches_exact_reference(tmp_path):
     ref = _reference_loglik(tree, names, leaves, Q[0].double().numpy(), pi[0].astype(np.float64))
     assert ref.max() < -250                                             # far below float32 underflow
     np.testing.assert_allclose(ll.numpy()[0], ref, rtol=1e-4, atol=1e-2)
+
+
+# ---------------------------------------------------------------------------
+# level-routed pruning: routing, node layout, gradients, strata, torch.compile
+# ---------------------------------------------------------------------------
+_DATA = os.path.join(os.path.dirname(__file__), "data")
+
+
+def _caterpillar_newick(n_leaves, rng):
+    """(((L0,L1),L2),L3)...: height n_leaves-1, one leaf and one internal child per level."""
+    s = f"L0:{rng.uniform(0.05, 0.5):.3f}"
+    for i in range(1, n_leaves):
+        s = f"({s},L{i}:{rng.uniform(0.05, 0.5):.3f}):{rng.uniform(0.05, 0.5):.3f}"
+    return s + ";"
+
+
+def _random_newick(n_leaves, rng, max_children=4):
+    """Random multifurcating tree; the children of a node have different heights."""
+    nodes = [f"L{i}:{rng.uniform(0.05, 0.5):.3f}" for i in range(n_leaves)]
+    while len(nodes) > 1:
+        k = min(len(nodes), int(rng.integers(2, max_children + 1)))
+        pick = set(rng.choice(len(nodes), size=k, replace=False).tolist())
+        merged = "(" + ",".join(nodes[i] for i in sorted(pick)) + f"):{rng.uniform(0.05, 0.5):.3f}"
+        nodes = [nd for i, nd in enumerate(nodes) if i not in pick] + [merged]
+    return nodes[0] + ";"
+
+
+def _read_tree(tmp_path, newick, name="t.nwk"):
+    path = tmp_path / name
+    path.write_text(newick)
+    tree = TreeHandler.read(str(path))
+    names = [t.name for t in tree.bio_tree.get_terminals(order="preorder")]
+    return tree, names
+
+
+def _reference_partials(tree, names, leaves, Q):
+    """Exact float64 log partials log P(leaves below u | u) of every internal node
+    (dict name -> (L, d)), postorder over the Bio tree with scipy's expm."""
+    name2idx = {nm: i for i, nm in enumerate(names)}
+    lv = np.asarray(leaves, np.float64)
+    out = {}
+
+    def rec(clade):
+        if clade.is_terminal():
+            with np.errstate(divide="ignore"):
+                return np.log(lv[name2idx[clade.name]])
+        acc = 0.0
+        for ch in clade.clades:
+            lp = rec(ch)
+            blen = float(np.float32(ch.branch_length))   # TreeHandler stores float32 lengths
+            with np.errstate(divide="ignore"):
+                logP = np.log(np.maximum(scipy.linalg.expm(Q * blen), 0.0))
+            acc = acc + logsumexp(lp[:, None, :] + logP[None, :, :], axis=-1)
+        out[clade.name] = acc
+        return acc
+
+    rec(tree.bio_tree.root)
+    return out
+
+
+def test_level_routing_simple3():
+    """simple3.tree: (((A,B)G,C)I,(D,(E,F)H)J)K; layers [A..F], [G,H], [I,J], [K]."""
+    t = TreeHandler.read(os.path.join(_DATA, "simple3.tree"))
+    routing = t.level_routing()
+    assert len(routing) == t.height == 3
+    assert [g[0] for g in routing[0]] == [1, 2]
+    l, src, dst, src_id, dst_id = routing[0][0]                # A,B -> G ; E,F -> H
+    np.testing.assert_array_equal(src, [0, 1, 4, 5]); np.testing.assert_array_equal(dst, [0, 0, 1, 1])
+    assert (src_id, dst_id) == (False, False)
+    l, src, dst, src_id, dst_id = routing[0][1]                # C -> I ; D -> J (one each: no aggregation)
+    np.testing.assert_array_equal(src, [2, 3]); np.testing.assert_array_equal(dst, [0, 1])
+    assert (src_id, dst_id) == (False, True)
+    assert routing[1] == [(2, *routing[1][0][1:3], True, True)]  # G -> I, H -> J: pure pass-through
+    l, src, dst, src_id, dst_id = routing[2][0]                # I, J -> K
+    np.testing.assert_array_equal(dst, [0, 0]); assert (src_id, dst_id) == (True, False)
+
+
+def test_level_routing_covers_every_node_once(tmp_path):
+    rng = np.random.default_rng(1)
+    tree, _ = _read_tree(tmp_path, _random_newick(40, rng))
+    routing = tree.level_routing()
+    assert len(routing) == tree.height
+    for h, groups in enumerate(routing):
+        start_h = tree.cum_layer_sizes[h] - tree.layer_sizes[h]
+        seen = np.concatenate([g[1] for g in groups])
+        assert sorted(seen.tolist()) == list(range(tree.layer_size(h)))
+        assert [g[0] for g in groups] == sorted({g[0] for g in groups})
+        for l, src, dst, src_id, dst_id in groups:
+            assert l > h
+            start_l = tree.cum_layer_sizes[l] - tree.layer_sizes[l]
+            np.testing.assert_array_equal(tree.parent_indices[start_h + src], start_l + dst)
+            assert src_id == (len(src) == tree.layer_size(h) and np.array_equal(src, np.arange(len(src))))
+            assert dst_id == (len(dst) == tree.layer_size(l) and np.array_equal(dst, np.arange(len(dst))))
+
+
+def test_device_index_cache_and_reset(tmp_path):
+    tree, names = _read_tree(tmp_path, _random_newick(8, np.random.default_rng(2)))
+    like = torch.zeros(3)
+    a = tree.device_index(("x",), np.array([2, 0, 1]), like)
+    assert a.dtype == torch.int64 and a.tolist() == [2, 0, 1]
+    assert tree.device_index(("x",), lambda: 1 / 0, like) is a          # cache hit: values not evaluated
+    r1 = tree.routing_for(like)
+    assert tree.routing_for(like) is r1 and torch.is_tensor(r1[0][0][1])
+    tree.update()                                                        # any tree change drops the caches
+    assert tree.device_index(("x",), np.array([1]), like) is not a
+
+
+@pytest.mark.parametrize("kind,d", [("caterpillar", 4), ("caterpillar", 64), ("random", 4), ("random", 20)])
+def test_pruning_matches_reference_all_nodes(tmp_path, kind, d):
+    """Values of every internal node (layout (num_anc, M, L, d) in node-index order) and the
+    log-likelihood, with permuted leaf names and two models, against the exact recursion."""
+    rng = np.random.default_rng(7)
+    n, L, M = (41, 3, 2) if kind == "caterpillar" else (60, 3, 2)
+    tree, names = _read_tree(tmp_path, _caterpillar_newick(n, rng) if kind == "caterpillar"
+                             else _random_newick(n, rng))
+    if kind == "caterpillar":
+        assert tree.height == n - 1
+    perm = rng.permutation(n)
+    names_in = [names[i] for i in perm]
+    leaves = rng.dirichlet(np.ones(d), size=(n, L))
+    leaves[rng.random(n) < 0.15] = 1.0                                   # missing taxa
+    Q, pi = _random_reversible(d, M, rng)
+    tp = expm_gtr(Q, torch.tensor(np.asarray(tree.branch_lengths, np.float64)), pi)   # (B, M, d, d)
+    lp = torch.log(pi)[:, None, :]
+    leaves_t = torch.tensor(leaves[perm])[:, None]                       # (n, 1, L, d) float64
+
+    anc = model.compute_ancestral_probabilities(leaves_t, tree, tp, leaf_names=names_in,
+                                                leaves_are_probabilities=True)
+    assert anc.shape == (tree.num_anc, M, L, d)
+    ll = model.loglik(leaves_t, tree, tp, lp, leaf_names=names_in, leaves_are_probabilities=True)
+    for m in range(M):
+        ref = _reference_partials(tree, names, leaves, Q[m].numpy())
+        for name, part in ref.items():
+            i = tree.nodes[name].index - tree.num_leaves
+            np.testing.assert_allclose(anc[i, m].numpy(), part, rtol=1e-9, atol=1e-9, err_msg=name)
+        root = ref[tree.bio_tree.root.name]
+        np.testing.assert_allclose(ll[m].numpy(), logsumexp(root + np.log(pi[m].numpy()), axis=-1),
+                                   rtol=1e-9, atol=1e-9)
+
+
+def test_pruning_gradcheck_without_recompute(tmp_path):
+    """Backward through the pruning under plain autograd. The former in-place accumulation
+    raised 'modified by an inplace operation' on trees of height >= 2, so training could only
+    run under activation checkpointing."""
+    rng = np.random.default_rng(3)
+    tree, names = _read_tree(tmp_path, _random_newick(9, rng))
+    assert tree.height >= 2
+    d, M, L = 3, 1, 2
+    Q, pi = _random_reversible(d, M, rng)
+    tp = expm_gtr(Q, torch.tensor(np.asarray(tree.branch_lengths, np.float64)), pi).detach().requires_grad_(True)
+    logits = torch.tensor(np.log(rng.dirichlet(np.ones(d), size=(9, L))))[:, None].requires_grad_(True)
+    lp = torch.log(pi)[:, None, :]
+
+    def f(tp, logits):
+        return model.loglik(logits, tree, tp, lp, leaf_names=names, leaves_are_probabilities=False)
+
+    assert torch.autograd.gradcheck(f, (tp, logits), eps=1e-6, atol=1e-6, rtol=1e-4)
+
+
+def test_stratified_compact_kernel_matches_full(tmp_path):
+    rng = np.random.default_rng(5)
+    tree, names = _read_tree(tmp_path, _random_newick(30, rng))
+    tree.stratify_branchlen(6)
+    assert tree.is_stratified
+    d, M, L = 4, 2, 3
+    Q, pi = _random_reversible(d, M, rng)
+    tp_compact = expm_gtr(Q, torch.tensor(np.asarray(tree.strata_blen_values, np.float64)), pi)  # (K, M, d, d)
+    leaves = torch.tensor(rng.dirichlet(np.ones(d), size=(30, L)))[:, None]
+    lp = torch.log(pi)[:, None, :]
+    ll_compact = model.loglik(leaves, tree, tp_compact, lp, leaf_names=names, leaves_are_probabilities=True)
+    tp_full = tp_compact[torch.as_tensor(tree.branch_to_stratum, dtype=torch.int64)]      # (B, M, d, d)
+    tree.is_stratified = False
+    ll_full = model.loglik(leaves, tree, tp_full, lp, leaf_names=names, leaves_are_probabilities=True)
+    tree.is_stratified = True
+    torch.testing.assert_close(ll_compact, ll_full)
+
+
+def test_torch_compile_captures_pruning_in_one_graph(tmp_path):
+    """dynamo + AOT autograd (backend aot_eager: no inductor, no compiler needed) capture the
+    whole pruning as one graph without breaks or data-dependent guards, values and gradients
+    equal eager, and a different column count reuses the dynamic-shape graph. Runs with
+    capture_scalar_outputs=True, which hidten switches on globally at import."""
+    dynamo = pytest.importorskip("torch._dynamo")
+    rng = np.random.default_rng(11)
+    tree, names = _read_tree(tmp_path, _caterpillar_newick(12, rng))
+    d, M = 4, 2
+    Q, pi = _random_reversible(d, M, rng, dtype=torch.float32)
+    tp = expm_gtr(Q, torch.tensor(np.asarray(tree.branch_lengths, np.float32)), pi).detach().requires_grad_(True)
+    lp = torch.log(pi)[:, None, :]
+
+    def leaves_for(L):
+        return torch.tensor(rng.dirichlet(np.ones(d), size=(12, L)).astype(np.float32))[:, None]
+
+    def f(leaves, tp):
+        return model.loglik(leaves, tree, tp, lp, leaf_names=names, leaves_are_probabilities=True)
+
+    leaves, leaves2 = leaves_for(5), leaves_for(7)
+    eager = f(leaves, tp)
+    (g_eager,) = torch.autograd.grad(eager.sum(), [tp])
+    dynamo.reset()
+    try:
+        with dynamo.config.patch(capture_scalar_outputs=True):
+            ex = dynamo.explain(f)(leaves, tp)
+            assert (ex.graph_count, ex.graph_break_count) == (1, 0), ex.break_reasons
+            cf = torch.compile(f, backend="aot_eager", dynamic=True)
+            out = cf(leaves, tp)
+            (g,) = torch.autograd.grad(out.sum(), [tp])
+            torch.testing.assert_close(out, eager)
+            torch.testing.assert_close(g, g_eager)
+            with dynamo.config.patch(error_on_recompile=True):
+                out2 = cf(leaves2, tp)
+            torch.testing.assert_close(out2, f(leaves2, tp))
+    finally:
+        dynamo.reset()
