@@ -13,7 +13,14 @@ the symmetric matrix exponential with the Daleckii-Krein (divided differences)
 formula, which is well defined for repeated eigenvalues. The eigendecomposition
 is computed once per rate matrix and reused for every evolutionary time ``t``
 it is broadcast against (branches x models), as in the TF implementation.
+
+``torch.linalg.eigh`` raises when its solver does not converge, and trained
+components drift towards Jukes-Cantor, whose (d-1)-fold eigenvalue float32
+cuSOLVER occasionally fails to decompose; :func:`_eigh_robust` retries such a
+decomposition in float64 instead of aborting the run.
 """
+import warnings
+
 import torch
 
 
@@ -31,6 +38,54 @@ def _t_zero_tol(dtype: torch.dtype) -> float:
 
 def _divided_difference_tol(dtype: torch.dtype) -> float:
     return 1e-10 if dtype == torch.float64 else 1e-5
+
+
+#: How often the fast ``torch.linalg.eigh`` failed and was redone in float64 (diagnostic).
+eigh_fallbacks = 0
+
+
+def _eigh_robust(S: torch.Tensor):
+    """``torch.linalg.eigh(S)`` with a float64 retry when the solver does not converge.
+
+    Trained GTR components drift towards Jukes-Cantor: in Agrippa sweep 5, 6 of the 8
+    codon-stack components (d=64) ended with an eigenvalue of multiplicity 63 and gaps
+    down to 1e-10, and float32 cuSOLVER eventually raised "failed to converge ... too
+    many repeated eigenvalues", killing a run in its last epoch. The matrix exponential
+    is perfectly well conditioned there -- only the eigenbasis of the cluster is
+    ill-determined, and any orthonormal one gives the same ``U diag(g) U^T`` -- so the
+    failed call is redone in float64 on the same device and, should that fail too, with
+    LAPACK on the CPU; the result is cast back to ``S``'s dtype and device.
+
+    The fast path is unchanged, so results stay bit-identical whenever it succeeds, and
+    ``torch.linalg.eigh`` already synchronises with the device to check its status, so
+    the retry costs nothing until it is needed. Non-finite input means diverged rate
+    parameters, not a solver problem, and is reported as such.
+    """
+    global eigh_fallbacks
+    try:
+        return torch.linalg.eigh(S)
+    except torch.linalg.LinAlgError as err:
+        failure = err
+    finite = torch.isfinite(S).flatten(-2).all(-1)            # (*sb,)
+    if not bool(finite.all()):
+        bad = (~finite).nonzero().tolist()
+        raise torch.linalg.LinAlgError(
+            f"expm_gtr: non-finite symmetrised rate matrix at batch element(s) {bad}; "
+            f"the rate parameters have diverged, this is not an eigensolver failure"
+        ) from failure
+    eigh_fallbacks += 1
+    if eigh_fallbacks == 1 or eigh_fallbacks % 1000 == 0:     # visible, never floods a log
+        warnings.warn(
+            f"expm_gtr: torch.linalg.eigh ({S.dtype}, {S.device}) did not converge on a "
+            f"near-degenerate spectrum; recomputed in float64 (fallback #{eigh_fallbacks}): "
+            f"{failure}", RuntimeWarning, stacklevel=3)
+    try:
+        lam, U = torch.linalg.eigh(S.to(torch.float64))
+    except torch.linalg.LinAlgError:
+        if S.device.type == "cpu":
+            raise
+        lam, U = torch.linalg.eigh(S.detach().to("cpu", torch.float64))
+    return lam.to(S.device, S.dtype), U.to(S.device, S.dtype)
 
 
 class _SymExpm(torch.autograd.Function):
@@ -51,7 +106,7 @@ class _SymExpm(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, S: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-        eigvals, eigvecs = torch.linalg.eigh(S)                # (*sb, d), (*sb, d, d)
+        eigvals, eigvecs = _eigh_robust(S)                     # (*sb, d), (*sb, d, d)
         dtype = S.dtype
         lam = torch.where(eigvals > _eig_positive_tol(dtype),
                           torch.zeros_like(eigvals), eigvals)

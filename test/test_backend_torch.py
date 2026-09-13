@@ -22,6 +22,7 @@ from scipy.special import logsumexp
 from evoten import model, set_backend, substitution_models
 from evoten.backend import backend
 from evoten.backend_pytorch import BackendTorch
+from evoten import expm_torch
 from evoten.expm_torch import expm_gtr, expm_ntr
 from evoten.tree_handler import TreeHandler
 
@@ -139,6 +140,97 @@ def test_expm_gtr_degenerate_spectrum_gradient():
     assert torch.isfinite(K1.grad).all() and torch.isfinite(t1.grad).all()
     torch.testing.assert_close(K1.grad, K2.grad, atol=1e-8, rtol=1e-6)
     torch.testing.assert_close(t1.grad, t2.grad, atol=1e-8, rtol=1e-6)
+
+
+def _near_jukes_cantor(d, M, jitter, seed=0):
+    """Symmetric kernels + equilibria of the kind trained codon components end up with
+    (Agrippa sweep 5): uniform pi and exchangeabilities equal up to ``jitter``, i.e. one
+    eigenvalue of multiplicity d-1, split by ~jitter."""
+    g = torch.Generator().manual_seed(seed)
+    k0 = float(BackendTorch().inverse_softplus(torch.tensor(1.0)))
+    K = k0 + jitter * torch.randn(M, d, d, dtype=torch.float64, generator=g)
+    return K, torch.full((M, d), 1.0 / d, dtype=torch.float64)
+
+
+def _flaky_eigh(fail):
+    """A torch.linalg.eigh that raises like non-converging cuSOLVER whenever fail(A)."""
+    real_eigh = torch.linalg.eigh
+
+    def eigh(A, *args, **kwargs):
+        if fail(A):
+            raise torch.linalg.LinAlgError("linalg.eigh: The algorithm failed to converge (simulated)")
+        return real_eigh(A, *args, **kwargs)
+    return eigh
+
+
+def test_expm_gtr_float32_near_jukes_cantor_matches_reference():
+    """The eigen-route is accurate on the (d-1)-fold degenerate spectrum in float32:
+    only the eigenbasis of the cluster is ill-determined, not the exponential."""
+    b = BackendTorch()
+    d, M = 64, 2
+    K, pi = _near_jukes_cantor(d, M, jitter=1e-9)
+    Q = b.make_rate_matrix(b.make_symmetric_pos_semidefinite(K), pi)
+    ev = torch.linalg.eigvalsh(Q[0])
+    assert ev[d - 2] - ev[0] < 1e-6                                      # multiplicity d-1
+    t = torch.tensor([[1e-3], [0.1], [1.0], [5.0]], dtype=torch.float64)
+    ref = torch.linalg.matrix_exp(Q[None] * t[..., None, None])
+    P32 = expm_gtr(Q.float(), t.float(), pi.float())
+    torch.testing.assert_close(P32.double(), ref, atol=2e-6, rtol=1e-5)
+
+
+def test_expm_gtr_eigh_fallback_on_degenerate_spectrum(monkeypatch):
+    """Agrippa sweep 5 died when float32 cuSOLVER could not decompose a near-Jukes-Cantor
+    codon matrix (eigenvalue of multiplicity 63). With that failure simulated for float32
+    input, expm_gtr must redo the decomposition in float64 and still return the exact
+    transition matrices and the float64 route's gradients."""
+    b = BackendTorch()
+    d, M = 64, 2
+    K, pi = _near_jukes_cantor(d, M, jitter=1e-9)
+    t = torch.tensor([[1e-3], [0.1], [1.0], [5.0]], dtype=torch.float64)
+    G = torch.randn(4, M, d, d, dtype=torch.float64, generator=torch.Generator().manual_seed(1))
+
+    K64 = K.clone().requires_grad_(True)                                 # reference: float64 route
+    Q64 = b.make_rate_matrix(b.make_symmetric_pos_semidefinite(K64), pi)
+    P64 = expm_gtr(Q64, t, pi)
+    (P64 * G).sum().backward()
+    ref = torch.linalg.matrix_exp(Q64.detach()[None] * t[..., None, None])
+
+    monkeypatch.setattr(expm_torch, "eigh_fallbacks", 0)
+    monkeypatch.setattr(torch.linalg, "eigh", _flaky_eigh(lambda A: A.dtype == torch.float32))
+    K32 = K.float().requires_grad_(True)
+    with pytest.warns(RuntimeWarning, match="recomputed in float64"):
+        Q32 = b.make_rate_matrix(b.make_symmetric_pos_semidefinite(K32), pi.float())
+        P32 = expm_gtr(Q32, t.float(), pi.float())
+    assert expm_torch.eigh_fallbacks == 1
+    assert P32.dtype == torch.float32
+    torch.testing.assert_close(P32.double(), ref, atol=2e-6, rtol=1e-5)
+    (P32 * G.float()).sum().backward()
+    assert torch.isfinite(K32.grad).all()
+    torch.testing.assert_close(K32.grad.double(), K64.grad, atol=1e-4, rtol=1e-3)
+
+
+def test_expm_gtr_eigh_failure_on_non_finite_input_is_reported(monkeypatch):
+    """Diverged (non-finite) rate parameters are not retried but named as such."""
+    Q, pi = _random_reversible(4, 2, np.random.default_rng(2))
+    Q = Q.clone()
+    Q[1, 0, 1] = float("nan")
+    t = torch.tensor([[0.5]], dtype=torch.float64)
+    monkeypatch.setattr(expm_torch, "eigh_fallbacks", 0)
+    monkeypatch.setattr(torch.linalg, "eigh", _flaky_eigh(lambda A: True))
+    with pytest.raises(torch.linalg.LinAlgError, match=r"non-finite .*\[\[1\]\]"):
+        expm_gtr(Q, t, pi)
+    assert expm_torch.eigh_fallbacks == 0
+
+
+def test_expm_gtr_eigh_failure_in_float64_too_propagates(monkeypatch):
+    """A solver failure that float64 cannot fix either is raised, never swallowed."""
+    Q, pi = _random_reversible(4, 2, np.random.default_rng(4))
+    t = torch.tensor([[0.5]], dtype=torch.float64)
+    monkeypatch.setattr(expm_torch, "eigh_fallbacks", 0)
+    monkeypatch.setattr(torch.linalg, "eigh", _flaky_eigh(lambda A: True))
+    with pytest.warns(RuntimeWarning), pytest.raises(torch.linalg.LinAlgError, match="simulated"):
+        expm_gtr(Q.float(), t.float(), pi.float())
+    assert expm_torch.eigh_fallbacks == 1
 
 
 def test_expm_ntr_matches_matrix_exp_and_gtr():
