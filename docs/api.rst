@@ -32,6 +32,16 @@ Utilities
 
 .. automodule:: evoten.util
 
+Simulation
+----------
+
+.. automodule:: evoten.simulation
+
+MAF Output
+----------
+
+.. automodule:: evoten.maf
+
 Backend: PyTorch
 ----------------
 
