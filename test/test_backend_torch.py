@@ -142,6 +142,44 @@ def test_expm_gtr_degenerate_spectrum_gradient():
     torch.testing.assert_close(t1.grad, t2.grad, atol=1e-8, rtol=1e-6)
 
 
+def test_eigh_autograd_is_nan_where_the_divided_differences_are_exact():
+    """Why expm_gtr has its own backward: at Agrippa's codon size (d=64), a batch with one
+    Jukes-Cantor component -- the start of its neutral components -- gives NaN gradients
+    for that component when autograd runs through torch.linalg.eigh, while the
+    Daleckii-Krein backward matches the exact autograd of torch.linalg.matrix_exp
+    (test/benchmark/expm_backward.py measures this, and the timing, at full size)."""
+    b = BackendTorch()
+    d = 64
+    g = torch.Generator().manual_seed(3)
+    K = torch.randn(2, d, d, dtype=torch.float64, generator=g)
+    K[1] = float(b.inverse_softplus(torch.tensor(1.0, dtype=torch.float64)))  # component 1 = JC
+    pik = 0.5 * torch.randn(2, d, dtype=torch.float64, generator=g)
+    pik[1] = 0.0
+    t = torch.tensor([[0.01], [0.05], [0.2]], dtype=torch.float64)
+    G = torch.randn(3, 2, d, d, dtype=torch.float64, generator=g)
+
+    def grad_K(expm):
+        Kr = K.clone().requires_grad_(True)
+        pi = b.make_equilibrium(pik)
+        Q = b.make_rate_matrix(b.make_symmetric_pos_semidefinite(Kr), pi)
+        (expm(Q, pi) * G).sum().backward()
+        return Kr.grad
+
+    def eigh_autograd(Q, pi):
+        sqrt_pi = torch.sqrt(pi)
+        S = Q * (1.0 / sqrt_pi).unsqueeze(-2) * sqrt_pi.unsqueeze(-1)
+        lam, U = torch.linalg.eigh(0.5 * (S + S.transpose(-1, -2)))
+        M = (U * torch.exp(lam * t.unsqueeze(-1)).unsqueeze(-2)) @ U.transpose(-1, -2)
+        return (1.0 / sqrt_pi).unsqueeze(-1) * M * sqrt_pi.unsqueeze(-2)
+
+    ref = grad_K(lambda Q, pi: torch.linalg.matrix_exp(Q[None] * t[..., None, None]))
+    ours = grad_K(lambda Q, pi: expm_gtr(Q, t, pi))
+    naive = grad_K(eigh_autograd)
+    torch.testing.assert_close(ours, ref, atol=1e-9, rtol=1e-6)
+    assert torch.isfinite(naive[0]).all()                               # distinct eigenvalues: fine
+    assert not torch.isfinite(naive[1]).all()                           # Jukes-Cantor: NaN
+
+
 def _near_jukes_cantor(d, M, jitter, seed=0):
     """Symmetric kernels + equilibria of the kind trained codon components end up with
     (Agrippa sweep 5): uniform pi and exchangeabilities equal up to ``jitter``, i.e. one
