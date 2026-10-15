@@ -3,7 +3,7 @@
 
 Three ways to get d/dparams of P(t) = exp(Q t) for reversible Q:
 
-  dk     evoten.expm_gtr_torch.expm_gtr: one eigh per rate matrix, custom backward with the
+  dk     evoten.expm_torch.expm_gtr: one eigh per rate matrix, custom backward with the
          Daleckii-Krein divided differences (what Agrippa trains with)
   eigh   the same eigendecomposition route, but autograd through torch.linalg.eigh
   pade   autograd through torch.linalg.matrix_exp(Q t), one Pade exponential per branch
@@ -32,7 +32,7 @@ import time
 import torch
 
 from evoten.backend_pytorch import BackendTorch
-from evoten.expm_gtr_torch import _finish, expm_gtr
+from evoten.expm_torch import _finish, expm_gtr
 
 B = BackendTorch()
 

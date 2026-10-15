@@ -196,7 +196,7 @@ def codon_frequencies(
     frequencies (F1x4 for shape (4,), F3x4 for shape (3, 4) with one row per
     codon position). The stop codons share stop_freq equally. A positive
     stop_freq keeps all frequencies positive, as required by reversible
-    transition matrices (expm_gtr_torch.expm_gtr) and softmax parameterizations.
+    transition matrices (expm_torch.expm_gtr) and softmax parameterizations.
 
     Args:
         nuc_freqs: None or nucleotide frequencies (a, c, g, t) of shape (4,)

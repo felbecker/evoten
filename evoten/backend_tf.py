@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 
 from evoten import backend, util, Backend
-from evoten.expm_gtr_tf import expm_gtr, expm_ntr
+from evoten.expm_tf import expm_gtr, expm_ntr
 
 
 # Documentation in the base class. Hover over the method name to see the

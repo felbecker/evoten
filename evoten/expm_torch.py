@@ -1,6 +1,6 @@
 """Matrix exponentials for the PyTorch backend.
 
-Torch twins of :mod:`evoten.expm_gtr_tf` (TensorFlow): the same symmetric
+Torch twins of :mod:`evoten.expm_tf` (TensorFlow): the same symmetric
 eigendecomposition route for time-reversible (GTR) rate matrices, the same
 row-stochastic re-projection and identity-at-``t=0`` guards, and a Pade route
 (``torch.linalg.matrix_exp``) for general (non-reversible, NTR) rate matrices.

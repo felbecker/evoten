@@ -22,8 +22,8 @@ from scipy.special import logsumexp
 from evoten import model, set_backend, substitution_models
 from evoten.backend import backend
 from evoten.backend_pytorch import BackendTorch
-from evoten import expm_gtr_torch
-from evoten.expm_gtr_torch import expm_gtr, expm_ntr
+from evoten import expm_torch
+from evoten.expm_torch import expm_gtr, expm_ntr
 from evoten.tree_handler import TreeHandler
 
 
@@ -233,13 +233,13 @@ def test_expm_gtr_eigh_fallback_on_degenerate_spectrum(monkeypatch):
     (P64 * G).sum().backward()
     ref = torch.linalg.matrix_exp(Q64.detach()[None] * t[..., None, None])
 
-    monkeypatch.setattr(expm_gtr_torch, "eigh_fallbacks", 0)
+    monkeypatch.setattr(expm_torch, "eigh_fallbacks", 0)
     monkeypatch.setattr(torch.linalg, "eigh", _flaky_eigh(lambda A: A.dtype == torch.float32))
     K32 = K.float().requires_grad_(True)
     with pytest.warns(RuntimeWarning, match="recomputed in float64"):
         Q32 = b.make_rate_matrix(b.make_symmetric_pos_semidefinite(K32), pi.float())
         P32 = expm_gtr(Q32, t.float(), pi.float())
-    assert expm_gtr_torch.eigh_fallbacks == 1
+    assert expm_torch.eigh_fallbacks == 1
     assert P32.dtype == torch.float32
     torch.testing.assert_close(P32.double(), ref, atol=2e-6, rtol=1e-5)
     (P32 * G.float()).sum().backward()
@@ -253,22 +253,22 @@ def test_expm_gtr_eigh_failure_on_non_finite_input_is_reported(monkeypatch):
     Q = Q.clone()
     Q[1, 0, 1] = float("nan")
     t = torch.tensor([[0.5]], dtype=torch.float64)
-    monkeypatch.setattr(expm_gtr_torch, "eigh_fallbacks", 0)
+    monkeypatch.setattr(expm_torch, "eigh_fallbacks", 0)
     monkeypatch.setattr(torch.linalg, "eigh", _flaky_eigh(lambda A: True))
     with pytest.raises(torch.linalg.LinAlgError, match=r"non-finite .*\[\[1\]\]"):
         expm_gtr(Q, t, pi)
-    assert expm_gtr_torch.eigh_fallbacks == 0
+    assert expm_torch.eigh_fallbacks == 0
 
 
 def test_expm_gtr_eigh_failure_in_float64_too_propagates(monkeypatch):
     """A solver failure that float64 cannot fix either is raised, never swallowed."""
     Q, pi = _random_reversible(4, 2, np.random.default_rng(4))
     t = torch.tensor([[0.5]], dtype=torch.float64)
-    monkeypatch.setattr(expm_gtr_torch, "eigh_fallbacks", 0)
+    monkeypatch.setattr(expm_torch, "eigh_fallbacks", 0)
     monkeypatch.setattr(torch.linalg, "eigh", _flaky_eigh(lambda A: True))
     with pytest.warns(RuntimeWarning), pytest.raises(torch.linalg.LinAlgError, match="simulated"):
         expm_gtr(Q.float(), t.float(), pi.float())
-    assert expm_gtr_torch.eigh_fallbacks == 1
+    assert expm_torch.eigh_fallbacks == 1
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
@@ -287,11 +287,11 @@ def test_expm_gtr_cusolver_failure_moves_to_cpu(monkeypatch):
             raise RuntimeError("cusolver error: CUSOLVER_STATUS_ALLOC_FAILED (simulated)")
         return real_eigh(A, *args, **kwargs)
 
-    monkeypatch.setattr(expm_gtr_torch, "_CUSOLVER_FAILED", False)
+    monkeypatch.setattr(expm_torch, "_CUSOLVER_FAILED", False)
     monkeypatch.setattr(torch.linalg, "eigh", eigh)
     with pytest.warns(RuntimeWarning, match="on the CPU"):
         P = expm_gtr(Q.cuda(), t.cuda(), pi.cuda())
-    assert expm_gtr_torch._CUSOLVER_FAILED and calls == ["cuda", "cpu"]
+    assert expm_torch._CUSOLVER_FAILED and calls == ["cuda", "cpu"]
     assert P.device.type == "cuda"
     torch.testing.assert_close(P.cpu(), ref, atol=1e-9, rtol=1e-9)
     expm_gtr(Q.cuda(), t.cuda(), pi.cuda())
@@ -303,8 +303,8 @@ def test_precompute_gtr_matches_expm_gtr(d):
     rng = np.random.default_rng(7)
     Q, pi = _random_reversible(d, 3, rng)
     t = torch.tensor(rng.uniform(0.0, 3.0, size=(5, 3)), dtype=torch.float64)   # (B, M)
-    decomp = expm_gtr_torch.precompute_gtr(Q, pi)
-    P = expm_gtr_torch.expm_gtr_from_decomp(decomp, t)
+    decomp = expm_torch.precompute_gtr(Q, pi)
+    P = expm_torch.expm_gtr_from_decomp(decomp, t)
     torch.testing.assert_close(P, expm_gtr(Q, t, pi), atol=0, rtol=0)
     ref = torch.linalg.matrix_exp(Q[None] * t[..., None, None])
     torch.testing.assert_close(P, ref, atol=1e-9, rtol=1e-9)
@@ -322,7 +322,7 @@ def test_precompute_gtr_gradcheck():
     def f(R_k, pi_k, t):
         pi = b.make_equilibrium(pi_k)
         Q = b.make_rate_matrix(b.make_symmetric_pos_semidefinite(R_k), pi)
-        return expm_gtr_torch.expm_gtr_from_decomp(expm_gtr_torch.precompute_gtr(Q, pi), t)
+        return expm_torch.expm_gtr_from_decomp(expm_torch.precompute_gtr(Q, pi), t)
 
     assert torch.autograd.gradcheck(f, (R_k, pi_k, t), eps=1e-6, atol=1e-6, rtol=1e-4)
 
@@ -337,14 +337,14 @@ def test_frozen_decomposition_time_gradient_on_jukes_cantor():
                                         torch.as_tensor(pi, dtype=torch.float64))   # (1, d, d)
     pi = torch.as_tensor(pi, dtype=torch.float64)
     with torch.no_grad():
-        cached = expm_gtr_torch.precompute_gtr(Q, pi)[:4]
-    decomp = expm_gtr_torch.GTRDecomp(*cached)
+        cached = expm_torch.precompute_gtr(Q, pi)[:4]
+    decomp = expm_torch.GTRDecomp(*cached)
     assert decomp.sym is None
     t = torch.tensor([[0.01], [0.3], [2.0]], dtype=torch.float64)
     G = torch.randn(3, 1, d, d, dtype=torch.float64, generator=torch.Generator().manual_seed(2))
 
     t1 = t.clone().requires_grad_(True)
-    (expm_gtr_torch.expm_gtr_from_decomp(decomp, t1) * G).sum().backward()
+    (expm_torch.expm_gtr_from_decomp(decomp, t1) * G).sum().backward()
     t2 = t.clone().requires_grad_(True)
     (torch.linalg.matrix_exp(Q[None] * t2[..., None, None]) * G).sum().backward()
     assert torch.isfinite(t1.grad).all()

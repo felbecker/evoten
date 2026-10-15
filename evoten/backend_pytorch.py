@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from evoten import Backend, util
-from evoten.expm_gtr_torch import expm_gtr, expm_ntr
+from evoten.expm_torch import expm_gtr, expm_ntr
 
 
 def _ensure_tensor(x):
