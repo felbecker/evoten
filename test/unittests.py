@@ -488,6 +488,17 @@ class TestBackend():
         np.testing.assert_allclose(result, y, atol=1e-6)
         np.testing.assert_allclose(result_log, np.log(y), atol=1e-6)
 
+    def _test_traverse_branch_far_below_best_state(self, backend, decode=False):
+        # float64 log partials 200 nats apart through a zero-length branch (identity):
+        # the stable path returns them unchanged (it used to floor them at -87 relative)
+        P = np.eye(2)[np.newaxis, np.newaxis]               # (1, 1, 2, 2)
+        X = np.array([[[[0.0, -200.0]]]])                  # (1, 1, 1, 2), float64
+        for transposed in (False, True):
+            result = backend.traverse_branch(X, P, transposed=transposed)
+            if decode:
+                result = result.numpy()
+            np.testing.assert_allclose(result, X, atol=1e-9)
+
     def test_root(self):
         t = TreeHandler.read("test/data/simple3.tree")
         t.change_root("H")
@@ -523,6 +534,55 @@ class TestBackendTF(unittest.TestCase, TestBackend):
         from evoten.backend_tf import BackendTF
         self._test_traverse_branch_transposed(BackendTF())
 
+    def test_traverse_branch_far_below_best_state(self):
+        from evoten.backend_tf import BackendTF
+        self._test_traverse_branch_far_below_best_state(BackendTF())
+
+    def test_transition_probs_ntr_vs_gtr(self):
+        """GTR eigendecomp and NTR expm (Padé) must agree on GTR matrices."""
+        import time
+        import evoten
+        evoten.set_backend("tensorflow")
+        b = evoten.backend
+
+        rng = np.random.default_rng(0)
+        d, n_t = 20, 32
+
+        # Random symmetric exchangeability matrix (1, d, d)
+        R_raw = rng.exponential(1.0, size=(d, d)).astype(np.float64)
+        R_raw = (R_raw + R_raw.T) / 2.
+        np.fill_diagonal(R_raw, 0.)
+        R = R_raw[np.newaxis]               # (1, d, d)
+
+        # Random stationary distribution (1, d)
+        pi_raw = rng.exponential(1.0, size=(1, d)).astype(np.float64)
+        pi = pi_raw / pi_raw.sum(axis=-1, keepdims=True)  # (1, d)
+
+        Q = b.make_rate_matrix(R, pi)       # (1, d, d)
+
+        # 32 log-spaced time values covering 0.01 – 10 substitutions/site
+        t = np.logspace(-2, 1, n_t).astype(np.float64)   # (32,)
+        # broadcasting: Q (1,d,d) × t (32,) → P (32,d,d) for both methods
+
+        # warm-up (TF traces on first call)
+        _ = b.make_transition_probs(Q, t[:1], pi)
+        _ = b.make_transition_probs_ntr(Q, t[:1])
+
+        REPS = 5
+        t0 = time.perf_counter()
+        for _ in range(REPS):
+            P_gtr = b.make_transition_probs(Q, t, pi).numpy()
+        t1 = time.perf_counter()
+        for _ in range(REPS):
+            P_ntr = b.make_transition_probs_ntr(Q, t).numpy()
+        t2 = time.perf_counter()
+
+        print(f"\n[NTR test] GTR eigendecomp : {(t1-t0)/REPS*1e3:.1f} ms/call")
+        print(f"[NTR test] NTR expm (Padé) : {(t2-t1)/REPS*1e3:.1f} ms/call")
+
+        np.testing.assert_allclose(P_gtr, P_ntr, atol=1e-4,
+            err_msg="GTR and NTR transition matrices diverge beyond tolerance")
+
 
 class TestBackendPytorch(unittest.TestCase, TestBackend):
 
@@ -549,6 +609,10 @@ class TestBackendPytorch(unittest.TestCase, TestBackend):
     def test_traverse_branch_transposed(self):
         from evoten.backend_pytorch import BackendTorch
         self._test_traverse_branch_transposed(BackendTorch(), decode=True)
+
+    def test_traverse_branch_far_below_best_state(self):
+        from evoten.backend_pytorch import BackendTorch
+        self._test_traverse_branch_far_below_best_state(BackendTorch(), decode=True)
 
 
 
@@ -761,6 +825,29 @@ class TestModelTF(unittest.TestCase):
             leaves_are_probabilities=True, return_probabilities=True
         )
         self.assertEqual(X.shape, (5,1,5,4))
+        np.testing.assert_almost_equal(X[-1,0], refs)
+
+
+    def test_anc_probs_simple3_buffer_pruning(self):
+        # the buffer schedule gives the same partials at all nodes as the
+        # default (routed) one
+        leaves, leaf_names, t, rate_matrix, equilibrium, refs = self.get_simple3_inputs_refs()
+        rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
+        t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = equilibrium[np.newaxis, :, np.newaxis]
+        transition_probs = backend.make_transition_probs(
+            rate_matrix, t.branch_lengths, equilibrium
+        )
+        X_routed, X_buffer = (model.compute_ancestral_probabilities(
+            leaves, t, transition_probs, leaf_names,
+            leaves_are_probabilities=True, pruning=pruning
+        ) for pruning in ("routed", "buffer"))
+        np.testing.assert_allclose(X_buffer, X_routed, rtol=1e-5, atol=1e-5)
+        X = model.compute_ancestral_probabilities(
+            leaves, t, transition_probs, leaf_names,
+            leaves_are_probabilities=True, return_probabilities=True,
+            pruning="buffer"
+        )
         np.testing.assert_almost_equal(X[-1,0], refs)
 
 

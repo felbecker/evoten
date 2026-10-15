@@ -150,31 +150,117 @@ class TreeHandler():
             Tensor of shape (layer_size, ...) representing the branch lengths
             for the tree layer.
         """
-        k = self.cum_layer_sizes[height]
-        s = self.layer_sizes[height]
-        n = int(not leaves_included) * self.layer_sizes[0]
+        # Plain Python ints (not numpy scalars): slice bounds must be static
+        # constants for torch.compile, see _layer_bounds.
+        k = self._cum_layer_sizes_py[height]
+        s = self._layer_sizes_py[height]
+        n = int(not leaves_included) * self._layer_sizes_py[0]
 
         # Stratified transition-probability fast path:
         # When a compact tp tensor of shape (num_strata, M, d, d) is passed
         # instead of the full tp (shape (num_nodes-1, M, d, d)), gather the
         # correct rows using branch_to_stratum.
         if (indexes_branches and leaves_included and self.is_stratified):
-            kernel_size = kernel.shape[0]  
-            full_branch_count = self.branch_to_stratum.shape[0]  
+            kernel_size = kernel.shape[0]
+            full_branch_count = self.branch_to_stratum.shape[0]
 
-            if kernel_size == self.num_strata:  
+            if kernel_size == self.num_strata:
                 # n=0 when leaves_included=True, so the branch slice is [k-s:k]
-                layer_indices = self.branch_to_stratum[k-s:k]  
-                return backend.gather(kernel, layer_indices)  
+                layer_indices = self.device_index(
+                    ("stratum", height), self.branch_to_stratum[k-s:k], kernel
+                )
+                return backend.gather(kernel, layer_indices)
 
-            if kernel_size != full_branch_count:  
-                raise ValueError(  
-                    "Expected a compact stratified branch kernel with first "  
-                    f"dimension {self.num_strata} or a full branch-indexed "  
-                    f"kernel with first dimension {full_branch_count}, got "  
-                    f"{kernel_size}."  
+            if kernel_size != full_branch_count:
+                raise ValueError(
+                    "Expected a compact stratified branch kernel with first "
+                    f"dimension {self.num_strata} or a full branch-indexed "
+                    f"kernel with first dimension {full_branch_count}, got "
+                    f"{kernel_size}."
                 )
         return kernel[k-s-n:k-n]
+
+
+    def device_index(self, name, values, like):
+        """ An index vector as the backend's native integer tensor, placed
+        where ``like`` lives and cached per (name, device).
+
+        The tree's index arrays (leaf permutation, per-layer stratum ids,
+        level routing) are numpy and static. Converting them inside the
+        per-column computation would add a host-to-device copy per use and
+        makes ``torch.compile`` treat them as data-dependent; converting
+        once and caching them keeps the traced computation free of numpy.
+
+        Args:
+            name: Hashable key identifying the array (e.g. ``("perm", ...)``).
+            values: The numpy index array (only used on a cache miss).
+            like: A tensor whose backend device the index should live on.
+        """
+        key = (backend.device_key(like), name)
+        cached = self._index_cache.get(key)
+        if cached is None:
+            if callable(values):
+                values = values()
+            cached = backend.ensure_index(np.asarray(values), like)
+            self._index_cache[key] = cached
+        return cached
+
+
+    def level_routing(self):
+        """ Static routing of upward messages between height layers.
+
+        Returns a list over child heights ``h = 0 .. height-1``; entry ``h``
+        is a list of groups ``(parent_height, src, dst, src_is_identity,
+        dst_is_identity)`` with numpy int64 index vectors: the nodes
+        ``src`` (positions within layer ``h``) have their parents at height
+        ``parent_height`` at positions ``dst`` (within that layer). Groups
+        are sorted by ``parent_height``; every node of layer ``h`` occurs in
+        exactly one group. ``src_is_identity`` says ``src == arange(layer
+        size)`` (no gather needed); ``dst_is_identity`` says the group maps
+        layer ``h`` one-to-one onto the whole parent layer (no aggregation
+        needed). Cached; recomputed by :meth:`update`.
+        """
+        if self._routing is None:
+            routing = []
+            for h in range(self.height):
+                start_h = self._cum_layer_sizes_py[h] - self._layer_sizes_py[h]
+                nodes = np.arange(start_h, self._cum_layer_sizes_py[h])
+                parents = self.parent_indices[nodes]
+                parent_heights = self.node_heights[parents]
+                groups = []
+                for l in np.unique(parent_heights):
+                    l = int(l)
+                    sel = np.flatnonzero(parent_heights == l)
+                    start_l = self._cum_layer_sizes_py[l] - self._layer_sizes_py[l]
+                    src = (nodes[sel] - start_h).astype(np.int64)
+                    dst = (parents[sel] - start_l).astype(np.int64)
+                    src_id = bool(len(src) == self._layer_sizes_py[h]
+                                  and np.array_equal(src, np.arange(len(src))))
+                    dst_id = bool(len(dst) == self._layer_sizes_py[l]
+                                  and np.array_equal(dst, np.arange(len(dst))))
+                    groups.append((l, src, dst, src_id, dst_id))
+                routing.append(groups)
+            self._routing = routing
+        return self._routing
+
+
+    def routing_for(self, like):
+        """ :meth:`level_routing` with the index vectors converted once to
+        the backend's native tensors on the device of ``like``
+        (cached per device, see :meth:`device_index`)."""
+        key = (backend.device_key(like), "routing")
+        cached = self._index_cache.get(key)
+        if cached is None:
+            cached = [
+                [(l,
+                  self.device_index(("route_src", h, l), src, like),
+                  self.device_index(("route_dst", h, l), dst, like),
+                  src_id, dst_id)
+                 for (l, src, dst, src_id, dst_id) in groups]
+                for h, groups in enumerate(self.level_routing())
+            ]
+            self._index_cache[key] = cached
+        return cached
 
 
     def get_leaf_counts_by_height(self, height):
@@ -231,8 +317,19 @@ class TreeHandler():
                 in the tensor.
             axis: The axis along which the tensor should be reordered.
         """
-        permutation = np.argsort(self.get_indices(node_names))
-        return backend.gather(tensor, permutation, 0)
+        # The permutation is static per name order: computed once, cached as a
+        # native index tensor per device (see device_index).
+        permutation = self.device_index(
+            ("perm", tuple(node_names)),
+            lambda: np.argsort(self.get_indices(node_names)),
+            tensor,
+        )
+        return backend.gather(tensor, permutation, axis)
+
+
+    def layer_size(self, height):
+        """ Number of nodes at the given height, as a Python int. """
+        return self._layer_sizes_py[height]
 
 
     def update(
@@ -322,6 +419,19 @@ class TreeHandler():
                 i = self.nodes[self.nodes[clade.name].parent.name].index
                 self.parent_indices[self.nodes[clade.name].index] = i
 
+        # per-node heights in index order, and plain-Python-int copies of the
+        # layer bookkeeping: get_values_by_height slices with them, since a
+        # traced (torch.compile) computation needs its slice bounds to be
+        # constants rather than numpy scalars.
+        self.node_heights = np.zeros(self.num_nodes, dtype=int)
+        for _, data in self.nodes.items():
+            self.node_heights[data.index] = data.height
+        self._layer_sizes_py = [int(x) for x in self.layer_sizes]
+        self._cum_layer_sizes_py = [int(x) for x in self.cum_layer_sizes]
+        # static index caches, see level_routing / device_index
+        self._routing = None
+        self._index_cache = {}
+
         if mods_applied or force_reset_init_lengths:
             self.is_stratified = False
             self.setup_init_branch_lengths()
@@ -391,6 +501,7 @@ class TreeHandler():
         )                                              # (K, 1)
         self.branch_to_stratum = branch_to_stratum     # (num_branches,)
         self.is_stratified = True
+        self._index_cache = {}                         # drop cached stratum ids
 
 
     def collapse(self, node_name):

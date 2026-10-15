@@ -60,6 +60,22 @@ class Backend():
         )
 
 
+    def make_transition_probs_ntr(self, rate_matrix, distances):
+        """Compute P(t) = exp(Q*t) via matrix exponential (Padé approximation).
+
+        Works for any rate matrix Q, including non-time-reversible ones.
+        No stationary distribution needed.
+
+        Args:
+            rate_matrix: Rate matrix Q of shape (..., d, d).
+            distances: Evolutionary times of shape (...).
+
+        Returns:
+            Stack of probability matrices of shape (..., d, d).
+        """
+        return self.wrapped_backend.make_transition_probs_ntr(rate_matrix, distances)
+
+
     def make_branch_lengths(self, kernel):
         """
         Converts a kernel of parameters to positive branch lengths.
@@ -236,6 +252,23 @@ class Backend():
         Ensures that x is a tensor of the backend's native type.
         """
         return self.wrapped_backend.ensure_tensor(x)
+
+
+    def ensure_index(self, values, like):
+        """
+        Converts a numpy integer index array to the backend's native index
+        type, placed on the device of the tensor ``like`` (where that matters).
+        Used by TreeHandler to convert its static index arrays once.
+        """
+        return self.wrapped_backend.ensure_index(values, like)
+
+
+    def device_key(self, like):
+        """
+        A hashable key identifying the device the tensor ``like`` lives on
+        (a constant for backends that place small constants themselves).
+        """
+        return self.wrapped_backend.device_key(like)
 
 
 

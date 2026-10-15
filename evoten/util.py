@@ -322,8 +322,9 @@ def tuple_array(
     k: int = 3,
     gap_symbols: str = '-',
     gap_separate_state: int = 0,
-    gap_class: np.ndarray | None = None
-) -> tuple[np.ndarray, np.ndarray]:
+    gap_class: np.ndarray | None = None,
+    return_index_tuples: bool = False,
+) -> tuple:
     """
     Directly compute the one-hot encoded tuple alignment array.
 
@@ -355,11 +356,17 @@ def tuple_array(
             dtype int8.  Values: 0=nucleotide, 1=gap_short, 2=gap_long/absent.
             Used only when gap_separate_state == 2.
 
+        return_index_tuples (bool): If True, also return the index tuples.
+
     Returns:
         result : np.ndarray, shape [R, L, 4**k + gap_separate_state], float32.
         first_positions : np.ndarray, shape [L], dtype int64.
             For each output column j, the 0-based alignment column index of
             the first character of tuple j.
+        index_tuples : np.ndarray, shape [L, k], dtype int64 (only with
+            return_index_tuples). Row j holds the k 0-based alignment column
+            indices of tuple j (sorted lexicographically over j, so
+            index_tuples[:, 0] == first_positions).
     """
     # Step 1: per row, map column-index tuple -> base-4 index (-1 if ambiguous)
     seq_dicts = []
@@ -433,4 +440,7 @@ def tuple_array(
             result[reclassify_mask, :] = 0.0
             result[reclassify_mask, 4 ** k] = 1.0   # gap_short
 
+    if return_index_tuples:
+        index_tuples = np.array(valid_tuples, dtype=np.int64).reshape(L, k)
+        return result, first_positions, index_tuples
     return result, first_positions

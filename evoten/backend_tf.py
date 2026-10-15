@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 
 from evoten import backend, util, Backend
-from evoten.expm_gtr import expm_gtr
+from evoten.expm_tf import expm_gtr, expm_ntr
 
 
 # Documentation in the base class. Hover over the method name to see the
@@ -32,6 +32,10 @@ class BackendTF(Backend):
         # P[b,m,i,j] = P(X(tau_b) = j | X(0) = i; model m))
         P = expm_gtr(rate_matrix, distances, equilibrium)
         return P
+
+
+    def make_transition_probs_ntr(self, rate_matrix, distances):
+        return expm_ntr(rate_matrix, distances)
 
 
     def make_branch_lengths(self, kernel):
@@ -70,32 +74,41 @@ class BackendTF(Backend):
         stable=True,
     ):
         if stable and logarithmic:
-            # stable log-sum-exp version
-            # Convert transition probs to log space
-            transition_log_probs = self.logits_from_probs(transition_probs)
+            # Numerically stable log-space matmul using the subtract-max trick.
+            # Avoids creating an O(N·M·L·d²) intermediate tensor that causes
+            # CUDA_ERROR_ILLEGAL_ADDRESS for large alphabets (e.g. k-mer d ≥ 64).
+            # P as given (cast to the dtype of X); a detour through logits_from_probs
+            # would raise its zeros to float32's tiny, i.e. floor log P at -87.
+            P = tf.cast(transition_probs, tf.as_dtype(X.dtype))
 
             # Handle broadcasting in L dimension
-            if transition_log_probs.shape[-3] == 1:
-                transition_log_probs = transition_log_probs[..., 0, :, :]
+            l_squeezed = P.shape[-3] == 1
+            if l_squeezed:
+                P = P[..., 0, :, :]
 
-            # Perform log-space matrix multiplication
+            # Subtract per-position input-state max for numerical stability
+            max_X = tf.reduce_max(X, axis=-1, keepdims=True)  # (..., L, 1)
+            X_exp = tf.exp(X - max_X)                          # (..., L, d), values in (0, 1]
 
-            if transposed:
-                # Compute log(X @ P^T) = log-sum-exp over d
-                # Expand dimensions for broadcasting
-                X_expanded = tf.expand_dims(X, axis=-1)  # (..., L, d_in, 1)
-                transition_expanded = tf.expand_dims(transition_log_probs, axis=-3)  # (..., 1, d_out, d_in)
-                # Sum is over d_in dimension
-                result = tf.reduce_logsumexp(X_expanded + transition_expanded, axis=-2)
+            # Floor at the dtype's smallest normal number: partials more than ~87
+            # (float32) or ~708 (float64) nats below the best state are raised to that depth.
+            epsilon = tf.constant(
+                np.finfo(tf.as_dtype(X.dtype).as_numpy_dtype).tiny, dtype=X.dtype
+            )
+
+            if l_squeezed:
+                # P: (..., d, d), X_exp: (..., L, d) -> result: (..., L, d)
+                # transposed=False (upward):   X_exp @ P^T  [result[i] = sum_j P[i,j]*X_exp[j]]
+                # transposed=True  (downward): X_exp @ P    [result[j] = sum_i X_exp[i]*P[i,j]]
+                result_exp = tf.matmul(X_exp, P, transpose_b=not transposed)
             else:
-                # Compute log(X @ P) = log-sum-exp over d
-                # Expand dimensions for broadcasting
-                X_expanded = tf.expand_dims(X, axis=-2)  # (..., L, d_in, 1)
-                transition_expanded = tf.expand_dims(transition_log_probs, axis=-3)  # (..., 1, d_in, d_out)
-                # Sum is over d_in dimension
-                result = tf.reduce_logsumexp(X_expanded + transition_expanded, axis=-1)
+                # P: (..., L, d, d) — position-specific matrices
+                X_exp_expanded = tf.expand_dims(X_exp, axis=-2)  # (..., L, 1, d)
+                result_exp = tf.matmul(
+                    X_exp_expanded, P, transpose_b=not transposed
+                )[..., 0, :]
 
-            return result
+            return tf.math.log(tf.maximum(result_exp, epsilon)) + max_X
 
         else:
             # fast matmul version, but requires conversion, might be numerically
@@ -173,3 +186,13 @@ class BackendTF(Backend):
 
     def ensure_tensor(self, x):
         return x
+
+
+    def ensure_index(self, values, like):
+        # numpy indices are accepted by tf.gather / unsorted_segment_sum and
+        # captured as constants in graphs; nothing to place.
+        return np.asarray(values, dtype=np.int32)
+
+
+    def device_key(self, like):
+        return "tf"
