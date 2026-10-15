@@ -488,6 +488,17 @@ class TestBackend():
         np.testing.assert_allclose(result, y, atol=1e-6)
         np.testing.assert_allclose(result_log, np.log(y), atol=1e-6)
 
+    def _test_traverse_branch_far_below_best_state(self, backend, decode=False):
+        # float64 log partials 200 nats apart through a zero-length branch (identity):
+        # the stable path returns them unchanged (it used to floor them at -87 relative)
+        P = np.eye(2)[np.newaxis, np.newaxis]               # (1, 1, 2, 2)
+        X = np.array([[[[0.0, -200.0]]]])                  # (1, 1, 1, 2), float64
+        for transposed in (False, True):
+            result = backend.traverse_branch(X, P, transposed=transposed)
+            if decode:
+                result = result.numpy()
+            np.testing.assert_allclose(result, X, atol=1e-9)
+
     def test_root(self):
         t = TreeHandler.read("test/data/simple3.tree")
         t.change_root("H")
@@ -522,6 +533,10 @@ class TestBackendTF(unittest.TestCase, TestBackend):
     def test_traverse_branch_transposed(self):
         from evoten.backend_tf import BackendTF
         self._test_traverse_branch_transposed(BackendTF())
+
+    def test_traverse_branch_far_below_best_state(self):
+        from evoten.backend_tf import BackendTF
+        self._test_traverse_branch_far_below_best_state(BackendTF())
 
     def test_transition_probs_ntr_vs_gtr(self):
         """GTR eigendecomp and NTR expm (Padé) must agree on GTR matrices."""
@@ -594,6 +609,10 @@ class TestBackendPytorch(unittest.TestCase, TestBackend):
     def test_traverse_branch_transposed(self):
         from evoten.backend_pytorch import BackendTorch
         self._test_traverse_branch_transposed(BackendTorch(), decode=True)
+
+    def test_traverse_branch_far_below_best_state(self):
+        from evoten.backend_pytorch import BackendTorch
+        self._test_traverse_branch_far_below_best_state(BackendTorch(), decode=True)
 
 
 

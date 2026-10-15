@@ -9,6 +9,7 @@ level) does not: the batched exchangeability matrix, the eigendecomposition-base
 tree against an exact float64 log-space reference (the case that underflowed in
 the old exp -> matmul -> log path).
 """
+import math
 import os
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
@@ -140,6 +141,25 @@ def test_expm_gtr_degenerate_spectrum_gradient():
     assert torch.isfinite(K1.grad).all() and torch.isfinite(t1.grad).all()
     torch.testing.assert_close(K1.grad, K2.grad, atol=1e-8, rtol=1e-6)
     torch.testing.assert_close(t1.grad, t2.grad, atol=1e-8, rtol=1e-6)
+
+
+@pytest.mark.parametrize("scale", [1.0, 1e-6, 1e-12])
+def test_expm_gtr_gradient_invariant_under_rescaling_rates_and_time(scale):
+    """Rates x scale and t / scale give the same P; the gradient must not depend on scale.
+    With an absolute threshold on eigenvalue gaps it was 24 % off at 1e-12 (PR #5 review)."""
+    K0 = torch.tensor([[0., 1., 1.], [1., 0., 2.], [1., 2., 0.]], dtype=torch.float64)
+    pi = torch.full((3,), 1. / 3, dtype=torch.float64)
+    G = torch.tensor([[0.3, -1.2, 0.7], [2.0, 0.1, -0.4], [-0.9, 0.5, 1.1]], dtype=torch.float64)
+    t = torch.tensor(1.0 / scale, dtype=torch.float64)
+    grads = []
+    for route in ("expm_gtr", "matrix_exp"):
+        K = (3.0 * scale * K0).clone().requires_grad_(True)
+        Q = 0.5 * (K + K.T) * pi[None, :]
+        Q = Q - torch.diag(Q.sum(-1))
+        P = expm_gtr(Q, t, pi) if route == "expm_gtr" else torch.linalg.matrix_exp(Q * t)
+        (P * G).sum().backward()
+        grads.append(K.grad * scale)                 # d/dK scales with 1/scale
+    torch.testing.assert_close(grads[0], grads[1], rtol=1e-9, atol=1e-12)
 
 
 def test_eigh_autograd_is_nan_where_the_divided_differences_are_exact():
@@ -406,6 +426,20 @@ def test_traverse_branch_no_underflow():
     P = torch.eye(4).expand(2, 1, 1, 4, 4)                  # (nodes, models, L*=1, d, d)
     torch.testing.assert_close(b.traverse_branch(X, P), X)
     assert (b.traverse_branch(X, P, stable=False) == -1e3).all()
+
+
+def test_traverse_branch_keeps_partials_far_below_the_best_state():
+    """The floor sits at the smallest normal number of the partials' own dtype: a partial
+    500 nats below the best state passes a zero-length branch unchanged in float64 (it used
+    to be floored at -87 relative, float32's limit); float32 keeps ~87 nats."""
+    b = BackendTorch()
+    for dt, depth in ((torch.float64, -500.0), (torch.float32, -80.0)):
+        X = torch.tensor([[0.0, depth]], dtype=dt)
+        for transposed in (False, True):
+            torch.testing.assert_close(b.traverse_branch(X, torch.eye(2, dtype=dt),
+                                                         transposed=transposed), X)
+    floored = b.traverse_branch(torch.tensor([[0.0, -300.0]]), torch.eye(2))[0, 1].item()
+    assert abs(floored - math.log(torch.finfo(torch.float32).tiny)) < 1e-3
 
 
 # ---------------------------------------------------------------------------

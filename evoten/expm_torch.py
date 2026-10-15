@@ -59,10 +59,6 @@ def _t_zero_tol(dtype: torch.dtype) -> float:
     return 1e-12 if dtype == torch.float64 else 1e-6
 
 
-def _divided_difference_tol(dtype: torch.dtype) -> float:
-    return 1e-10 if dtype == torch.float64 else 1e-5
-
-
 #: How often the fast ``torch.linalg.eigh`` failed and was redone in float64 (diagnostic).
 eigh_fallbacks = 0
 
@@ -149,8 +145,8 @@ class _SymExpm(torch.autograd.Function):
     Backward: with ``S = U diag(lam) U^T`` and ``g_k = exp(lam_k t)`` the
     derivative of ``U diag(g) U^T`` along a symmetric perturbation ``dS`` is
     ``U (F o (U^T dS U)) U^T`` with the divided differences
-    ``F_ij = (g_i - g_j) / (lam_i - lam_j)`` and ``F_ii = t g_i``; near-equal
-    eigenvalues use the derivative instead of the quotient. The cotangent
+    ``F_ij = (g_i - g_j) / (lam_i - lam_j)`` and ``F_ii = t g_i``, evaluated with
+    ``expm1`` so that near-equal eigenvalues need no special case. The cotangent
     w.r.t. ``t`` is ``sum_k lam_k g_k (U^T G U)_kk`` (``d/dt exp(St) = S exp(St)``).
     ``eigvals`` and ``eigvecs`` get no gradient.
     """
@@ -180,16 +176,20 @@ class _SymExpm(torch.autograd.Function):
         W = Ut @ G @ U                                         # (*bb, d, d) cotangent in the eigenbasis
         grad_S = None
         if ctx.needs_input_grad[0]:
-            # d g_k / d lam_k = t g_k, zero where the exponent was clipped.
-            deriv = torch.where(clipped, torch.zeros_like(g), t_b * g)      # (*bb, d)
-            dl = lam.unsqueeze(-1) - lam.unsqueeze(-2)         # (*sb, d, d)
-            dg = g.unsqueeze(-1) - g.unsqueeze(-2)             # (*bb, d, d)
-            small = dl.abs() < _divided_difference_tol(g.dtype)
-            small = small | torch.zeros_like(dg, dtype=torch.bool)  # broadcast to (*bb, d, d)
-            safe_dl = torch.where(small, torch.ones_like(dg), dl)
-            F = torch.where(small,
-                            0.5 * (deriv.unsqueeze(-1) + deriv.unsqueeze(-2)),
-                            dg / safe_dl)
+            # F_ij = (g_i - g_j) / (lam_i - lam_j) = t g_hi (1 - e^-y) / y with
+            # y = t |lam_i - lam_j| and g_hi = max(g_i, g_j); F_ii = t g_i (y = 0).
+            # expm1 keeps this exact for every gap, without a threshold for near-equal
+            # eigenvalues, and invariant under rescaling the rates by c and t by 1/c.
+            # No gradient where both exponents were clipped.
+            arg = lam * t_b                                    # (*bb, d)
+            y = (arg.unsqueeze(-1) - arg.unsqueeze(-2)).abs()  # (*bb, d, d)
+            pos = y > 0
+            ratio = torch.where(pos, -torch.expm1(-y) / torch.where(pos, y, torch.ones_like(y)),
+                                torch.ones_like(y))
+            g_hi = torch.maximum(g.unsqueeze(-1), g.unsqueeze(-2))
+            F = t_b.unsqueeze(-1) * g_hi * ratio
+            both_clipped = clipped.unsqueeze(-1) & clipped.unsqueeze(-2)
+            F = torch.where(both_clipped, torch.zeros_like(F), F)
             gS = U @ (F * W) @ Ut                              # (*bb, d, d)
             gS = 0.5 * (gS + gS.transpose(-1, -2))             # S is symmetric
             grad_S = gS.sum_to_size(ctx.s_shape)

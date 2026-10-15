@@ -77,20 +77,23 @@ class BackendTF(Backend):
             # Numerically stable log-space matmul using the subtract-max trick.
             # Avoids creating an O(N·M·L·d²) intermediate tensor that causes
             # CUDA_ERROR_ILLEGAL_ADDRESS for large alphabets (e.g. k-mer d ≥ 64).
-            transition_log_probs = self.logits_from_probs(transition_probs)
+            # P as given (cast to the dtype of X); a detour through logits_from_probs
+            # would raise its zeros to float32's tiny, i.e. floor log P at -87.
+            P = tf.cast(transition_probs, tf.as_dtype(X.dtype))
 
             # Handle broadcasting in L dimension
-            l_squeezed = transition_log_probs.shape[-3] == 1
+            l_squeezed = P.shape[-3] == 1
             if l_squeezed:
-                transition_log_probs = transition_log_probs[..., 0, :, :]
-            P = tf.exp(transition_log_probs)
+                P = P[..., 0, :, :]
 
             # Subtract per-position input-state max for numerical stability
             max_X = tf.reduce_max(X, axis=-1, keepdims=True)  # (..., L, 1)
             X_exp = tf.exp(X - max_X)                          # (..., L, d), values in (0, 1]
 
+            # Floor at the dtype's smallest normal number: partials more than ~87
+            # (float32) or ~708 (float64) nats below the best state are raised to that depth.
             epsilon = tf.constant(
-                np.finfo(util.default_dtype).tiny, dtype=X.dtype
+                np.finfo(tf.as_dtype(X.dtype).as_numpy_dtype).tiny, dtype=X.dtype
             )
 
             if l_squeezed:

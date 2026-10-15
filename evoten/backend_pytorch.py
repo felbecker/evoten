@@ -110,7 +110,9 @@ class BackendTorch(Backend):
             else:
                 # P: (..., L, d, d) -- position-specific matrices
                 result_exp = torch.matmul(X_exp.unsqueeze(-2), P_T)[..., 0, :]
-            epsilon = float(np.finfo(util.default_dtype).tiny)
+            # Floor at the dtype's smallest normal number: partials more than ~87 (float32)
+            # or ~708 (float64) nats below the node's best state are raised to that depth.
+            epsilon = torch.finfo(result_exp.dtype).tiny
             return torch.log(result_exp.clamp(min=epsilon)) + max_X
 
         # fast matmul version, but requires conversion, might be numerically
