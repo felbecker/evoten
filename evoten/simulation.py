@@ -8,7 +8,7 @@ matrix P[branch, m] that belongs to the state of its parent. This is the
 generative model of evoten's mixture likelihoods (model.loglik with one model
 per mixture component).
 
-Torch-only and, like evoten.expm_torch, not imported by the evoten package:
+Torch-only and, like evoten.expm_gtr_torch, not imported by the evoten package:
 ``from evoten import simulation``.
 """
 from collections.abc import Iterator
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from evoten.expm_torch import expm_gtr, expm_ntr
+from evoten.expm_gtr_torch import expm_gtr, expm_ntr
 from evoten.tree_handler import TreeHandler
 
 
@@ -65,8 +65,8 @@ def transition_matrices(
             Required if reversible.
         reversible: If True, the rate matrices must fulfill detailed balance
             with respect to the strictly positive equilibrium and the
-            symmetric eigendecomposition (expm_torch.expm_gtr) is used,
-            otherwise the Pade approximation (expm_torch.expm_ntr).
+            symmetric eigendecomposition (expm_gtr_torch.expm_gtr) is used,
+            otherwise the Pade approximation (expm_gtr_torch.expm_ntr).
         dtype: Floating point type of the computation.
         device: Device of the computation, default that of rate_matrices.
         tol: Relative tolerance of the input checks.
