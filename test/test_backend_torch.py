@@ -475,7 +475,8 @@ def _reference_loglik(tree, names, leaves, Q, pi):
     return logsumexp(rec(tree.bio_tree.root) + np.log(pi)[None, :], axis=-1)
 
 
-def test_deep_tree_loglik_matches_exact_reference(tmp_path):
+@pytest.mark.parametrize("pruning", model.PRUNING_MODES)
+def test_deep_tree_loglik_matches_exact_reference(tmp_path, pruning):
     n, d, L = 256, 4, 5
     nwk = tmp_path / "balanced.nwk"
     nwk.write_text(_balanced_newick(n, 0.05))
@@ -492,7 +493,7 @@ def test_deep_tree_loglik_matches_exact_reference(tmp_path):
                                        torch.tensor(pi))
     lp = torch.log(torch.tensor(pi))[:, None, :]
     ll = model.loglik(torch.tensor(leaves), tree, tp, lp, leaf_names=names,
-                      leaves_are_probabilities=True)                    # (1, L)
+                      leaves_are_probabilities=True, pruning=pruning)  # (1, L)
     ref = _reference_loglik(tree, names, leaves, Q[0].double().numpy(), pi[0].astype(np.float64))
     assert ref.max() < -250                                             # far below float32 underflow
     np.testing.assert_allclose(ll.numpy()[0], ref, rtol=1e-4, atol=1e-2)
@@ -603,8 +604,9 @@ def test_device_index_cache_and_reset(tmp_path):
     assert tree.device_index(("x",), np.array([1]), like) is not a
 
 
+@pytest.mark.parametrize("pruning", model.PRUNING_MODES)
 @pytest.mark.parametrize("kind,d", [("caterpillar", 4), ("caterpillar", 64), ("random", 4), ("random", 20)])
-def test_pruning_matches_reference_all_nodes(tmp_path, kind, d):
+def test_pruning_matches_reference_all_nodes(tmp_path, kind, d, pruning):
     """Values of every internal node (layout (num_anc, M, L, d) in node-index order) and the
     log-likelihood, with permuted leaf names and two models, against the exact recursion."""
     rng = np.random.default_rng(7)
@@ -623,9 +625,10 @@ def test_pruning_matches_reference_all_nodes(tmp_path, kind, d):
     leaves_t = torch.tensor(leaves[perm])[:, None]                       # (n, 1, L, d) float64
 
     anc = model.compute_ancestral_probabilities(leaves_t, tree, tp, leaf_names=names_in,
-                                                leaves_are_probabilities=True)
+                                                leaves_are_probabilities=True, pruning=pruning)
     assert anc.shape == (tree.num_anc, M, L, d)
-    ll = model.loglik(leaves_t, tree, tp, lp, leaf_names=names_in, leaves_are_probabilities=True)
+    ll = model.loglik(leaves_t, tree, tp, lp, leaf_names=names_in, leaves_are_probabilities=True,
+                      pruning=pruning)
     for m in range(M):
         ref = _reference_partials(tree, names, leaves, Q[m].numpy())
         for name, part in ref.items():
@@ -636,10 +639,11 @@ def test_pruning_matches_reference_all_nodes(tmp_path, kind, d):
                                    rtol=1e-9, atol=1e-9)
 
 
-def test_pruning_gradcheck_without_recompute(tmp_path):
-    """Backward through the pruning under plain autograd. The former in-place accumulation
-    raised 'modified by an inplace operation' on trees of height >= 2, so training could only
-    run under activation checkpointing."""
+@pytest.mark.parametrize("pruning", model.PRUNING_MODES)
+def test_pruning_gradcheck_without_recompute(tmp_path, pruning):
+    """Backward through the pruning under plain autograd. The former in-place accumulation of
+    the buffer schedule raised 'modified by an inplace operation' on trees of height >= 2, so
+    training could only run under activation checkpointing."""
     rng = np.random.default_rng(3)
     tree, names = _read_tree(tmp_path, _random_newick(9, rng))
     assert tree.height >= 2
@@ -650,12 +654,14 @@ def test_pruning_gradcheck_without_recompute(tmp_path):
     lp = torch.log(pi)[:, None, :]
 
     def f(tp, logits):
-        return model.loglik(logits, tree, tp, lp, leaf_names=names, leaves_are_probabilities=False)
+        return model.loglik(logits, tree, tp, lp, leaf_names=names, leaves_are_probabilities=False,
+                            pruning=pruning)
 
     assert torch.autograd.gradcheck(f, (tp, logits), eps=1e-6, atol=1e-6, rtol=1e-4)
 
 
-def test_stratified_compact_kernel_matches_full(tmp_path):
+@pytest.mark.parametrize("pruning", model.PRUNING_MODES)
+def test_stratified_compact_kernel_matches_full(tmp_path, pruning):
     rng = np.random.default_rng(5)
     tree, names = _read_tree(tmp_path, _random_newick(30, rng))
     tree.stratify_branchlen(6)
@@ -665,12 +671,32 @@ def test_stratified_compact_kernel_matches_full(tmp_path):
     tp_compact = expm_gtr(Q, torch.tensor(np.asarray(tree.strata_blen_values, np.float64)), pi)  # (K, M, d, d)
     leaves = torch.tensor(rng.dirichlet(np.ones(d), size=(30, L)))[:, None]
     lp = torch.log(pi)[:, None, :]
-    ll_compact = model.loglik(leaves, tree, tp_compact, lp, leaf_names=names, leaves_are_probabilities=True)
+    ll_compact = model.loglik(leaves, tree, tp_compact, lp, leaf_names=names, leaves_are_probabilities=True,
+                              pruning=pruning)
     tp_full = tp_compact[torch.as_tensor(tree.branch_to_stratum, dtype=torch.int64)]      # (B, M, d, d)
     tree.is_stratified = False
-    ll_full = model.loglik(leaves, tree, tp_full, lp, leaf_names=names, leaves_are_probabilities=True)
+    ll_full = model.loglik(leaves, tree, tp_full, lp, leaf_names=names, leaves_are_probabilities=True,
+                           pruning=pruning)
     tree.is_stratified = True
     torch.testing.assert_close(ll_compact, ll_full)
+
+
+def test_pruning_schedules_agree(tmp_path):
+    """routed and buffer give the same partials (float32, all nodes, root only, as
+    probabilities) on a deep random tree; an unknown schedule is rejected."""
+    rng = np.random.default_rng(11)
+    tree, names = _read_tree(tmp_path, _random_newick(50, rng))
+    d, M, L = 20, 3, 7
+    Q, pi = _random_reversible(d, M, rng, dtype=torch.float32)
+    tp = expm_gtr(Q, torch.tensor(np.asarray(tree.branch_lengths, np.float32)), pi)
+    leaves = torch.tensor(rng.dirichlet(np.ones(d), size=(50, L)), dtype=torch.float32)[:, None]
+    for kw in ({}, {"return_only_root": True}, {"return_probabilities": True}):
+        a, b = (model.compute_ancestral_probabilities(leaves, tree, tp, leaf_names=names,
+                                                      pruning=p, **kw)
+                for p in ("routed", "buffer"))
+        torch.testing.assert_close(a, b, rtol=1e-5, atol=1e-5)
+    with pytest.raises(ValueError):
+        model.loglik(leaves, tree, tp, torch.log(pi)[:, None, :], leaf_names=names, pruning="serial")
 
 
 def test_torch_compile_captures_pruning_in_one_graph(tmp_path):

@@ -828,6 +828,29 @@ class TestModelTF(unittest.TestCase):
         np.testing.assert_almost_equal(X[-1,0], refs)
 
 
+    def test_anc_probs_simple3_buffer_pruning(self):
+        # the buffer schedule gives the same partials at all nodes as the
+        # default (routed) one
+        leaves, leaf_names, t, rate_matrix, equilibrium, refs = self.get_simple3_inputs_refs()
+        rate_matrix = rate_matrix[np.newaxis, :, np.newaxis]
+        t.branch_lengths = t.branch_lengths[:, np.newaxis]
+        equilibrium = equilibrium[np.newaxis, :, np.newaxis]
+        transition_probs = backend.make_transition_probs(
+            rate_matrix, t.branch_lengths, equilibrium
+        )
+        X_routed, X_buffer = (model.compute_ancestral_probabilities(
+            leaves, t, transition_probs, leaf_names,
+            leaves_are_probabilities=True, pruning=pruning
+        ) for pruning in ("routed", "buffer"))
+        np.testing.assert_allclose(X_buffer, X_routed, rtol=1e-5, atol=1e-5)
+        X = model.compute_ancestral_probabilities(
+            leaves, t, transition_probs, leaf_names,
+            leaves_are_probabilities=True, return_probabilities=True,
+            pruning="buffer"
+        )
+        np.testing.assert_almost_equal(X[-1,0], refs)
+
+
     def test_anc_probs_just_root(self):
         tree = TreeHandler() # root only
         leaves_ind = np.array([[0,1,3,3,1]])
