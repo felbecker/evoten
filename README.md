@@ -14,14 +14,14 @@ Vectorized computation of tree likelihoods.
 For users:
 
 ```bash
-git clone https://github.com/felbecker/evoten
-cd evoten
-pip install -e .[tensorflow]  # or [torch] for pytorch backend
+pip install evoten[tensorflow]  # or [torch] for pytorch backend
 ```
 
 For developers:
 
 ```bash
+git clone https://github.com/felbecker/evoten
+cd evoten
 pip install -e .[tensorflow,torch,docs]
 ```
 
